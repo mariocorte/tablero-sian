@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+pydantic
+Jinja2
+psycopg2-binary
+jaydebeapi
+JPype1
+requests
