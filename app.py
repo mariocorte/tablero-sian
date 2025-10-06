@@ -7,6 +7,7 @@ import os
 import base64
 import time
 from datetime import datetime, timedelta
+from pathlib import Path
 import jaydebeapi
 import requests
 import json
@@ -29,7 +30,8 @@ password = "power177"
 driver_class = os.environ.get("DRIVER_CLASS", "com.informix.jdbc.IfxDriver")
 
 app = FastAPI(title="Procesos SIAN")
-templates = Jinja2Templates(directory="templates")
+BASE_DIR = Path(__file__).resolve().parent
+templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 query_sql_cache: Optional[str] = None
 queryvl_cache: Optional[str] = None
