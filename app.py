@@ -327,7 +327,7 @@ def ejecutarpaso(proceso, panel_config):
     return ejecutarpaso
 
 
-def registrar_paso(proceso, panel_config):
+def registrar_paso(proceso, codigo_proceso, panel_config):
     connrp = psycopg2.connect(**panel_config)
     try:
         with connrp.cursor() as cursor:
@@ -338,7 +338,7 @@ def registrar_paso(proceso, panel_config):
             """
             cursor.execute(query)
             query = f"""
-            insert into ejecproc (procesosatid,ejecprocfecha,ejecprocresultado) values (1,'{ahora}',0) ;
+            insert into ejecproc (procesosatid,ejecprocfecha,ejecprocresultado) values ({codigo_proceso},'{ahora}',0) ;
             """
             cursor.execute(query)
             connrp.commit()
@@ -424,6 +424,8 @@ def procesar_e_insertar(pgsql_config, panel_config, test, query_sql):
                 errores.append(f"Error al procesar fila {fila[0]}: {e}")
                 print(f"Error al procesar fila {fila[0]}: {e}")
 
+        if actualizar:
+            registrar_paso("paso1", 1, panel_config)
         conn.close()
         if errores:
             print("Algunos registros no pudieron procesarse:")
@@ -542,7 +544,7 @@ def procesar_e_insertar_iw(pgsql_config, pgsql_iw, panel_config, test, queryvl):
                 print(f"Error al procesar fila {fila[1]}: {e}")
 
         if actualizar:
-            registrar_paso("paso21", panel_config)
+            registrar_paso("paso21", 21, panel_config)
         conn.close()
         if errores:
             print("Algunos registros no pudieron procesarse:")
