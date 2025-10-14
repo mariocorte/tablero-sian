@@ -133,8 +133,10 @@ def lasstage(pmovimientoid, pactuacionid, pdomicilioelectronicopj, CODIGO_SEGUIM
 
                 ultimo_estado = estados_normalizados[-1]
                 print(
-                    "******Tag: {http://tempuri.org/}Estado, Atributos: {}, valor: {}".format(
-                        {}, ultimo_estado.get("estado") or ""
+                    "******Tag: {tag}, Atributos: {attrs}, valor: {valor}".format(
+                        tag="{http://tempuri.org/}Estado",
+                        attrs={},
+                        valor=ultimo_estado.get("estado") or "",
                     )
                 )
                 _log_step(
