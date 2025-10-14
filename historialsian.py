@@ -109,54 +109,32 @@ def lasstage(pmovimientoid, pactuacionid, pdomicilioelectronicopj, CODIGO_SEGUIM
             # print(response.text)  # Mostrar XML de respuesta
             root = ET.fromstring(response.text)
 
-            for n1 in root:
-                # print(f'n1-------------')
-                # print(f'*Tag: {n1.tag}, Atributos: {n1.attrib}')
+            namespaces = {
+                "soap": "http://schemas.xmlsoap.org/soap/envelope/",
+                "temp": "http://tempuri.org/",
+            }
 
-                for n2 in n1:
-                    # print(f'n2-------------')
-                    # print(f'**Tag: {n2.tag}, Atributos: {n2.attrib}, valor: {n2.text}')
+            estados = root.findall(
+                ".//temp:HistorialEstados/temp:EstadoNotificacion", namespaces
+            )
 
-                    for n3 in n2:
-                        # print(f'n3-------------')
-                        # print(f'***Tag: {n3.tag}, Atributos: {n3.attrib}, valor: {n3.text}')
-                        for n4 in n3:
-                            # print(f'n4-------------')
-                            # print(f'****Tag: {n4.tag}, Atributos: {n4.attrib}, valor: {n4.text}')
-                            for n5 in reversed(n4):
-                                # print(f'n5-------------')
-                                # print(f'*****Tag: {n5.tag}, Atributos: {n5.attrib}, valor: {n5.text}')
-                                archivoid = 0
-                                archivonombre = ""
-                                estadonotificacionid = 0
-                                archivocontenido = ""
-                                fecha = ""
-                                estado = ""
-                                observaciones = ""
-                                motivo = ""
-                                responsablenotificacion = ""
-                                dependencianotificacion = ""
-                                archivoid = 0
-                                archivonombre = ""
-                                archivocontenido = ""
-                                fecha_estado = None
-                                if n5.attrib:
-                                    for clave, valor in n5.attrib.items():
-                                        if 'fecha' in clave.lower():
-                                            fecha_estado = valor
-                                            break
-                                    if fecha_estado is None:
-                                        fecha_estado = next(
-                                            iter(n5.attrib.values()), None
-                                        )
+            for estado_node in reversed(estados):
+                estado_text = None
+                fecha_estado = None
 
-                                for n6 in n5:
-                                    if n6.tag == '{http://tempuri.org/}Estado':
-                                        print(
-                                            f"******Tag: {n6.tag}, Atributos: {n6.attrib}, valor: {n6.text}"
-                                        )
-                                        estado = n6.text
-                                        return estado, fecha_estado
+                estado_element = estado_node.find("temp:Estado", namespaces)
+                if estado_element is not None:
+                    estado_text = estado_element.text
+
+                fecha_element = estado_node.find("temp:Fecha", namespaces)
+                if fecha_element is not None:
+                    fecha_estado = fecha_element.text
+
+                if estado_text:
+                    print(
+                        f"******Tag: {{http://tempuri.org/}}Estado, Atributos: {estado_element.attrib if estado_element is not None else {}}, valor: {estado_text}"
+                    )
+                    return estado_text, fecha_estado
             return None, None
 
         else:
