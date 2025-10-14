@@ -113,7 +113,7 @@ def lasstage(pmovimientoid,pactuacionid,pdomicilioelectronicopj,CODIGO_SEGUIMIEN
 			root = ET.fromstring(response.text)
 
 
-			for n1 in root:
+                        for n1 in root:
 				#print(f'n1-------------')
 				#print(f'*Tag: {n1.tag}, Atributos: {n1.attrib}')
 				
@@ -127,38 +127,50 @@ def lasstage(pmovimientoid,pactuacionid,pdomicilioelectronicopj,CODIGO_SEGUIMIEN
 						for n4 in n3:
 							#print(f'n4-------------')
 							#print(f'****Tag: {n4.tag}, Atributos: {n4.attrib}, valor: {n4.text}')
-							for n5 in reversed(n4):
-								#print(f'n5-------------')
-								#print(f'*****Tag: {n5.tag}, Atributos: {n5.attrib}, valor: {n5.text}')
-								archivoid = 0
-								archivonombre = ""
-								estadonotificacionid = 0
-								archivocontenido = ""
-								fecha = ""
-								estado = ""
-								observaciones = ""
-								motivo = ""
-								responsablenotificacion = ""
-								dependencianotificacion = ""
-								archivoid = 0
-								archivonombre = ""
-								archivocontenido = ""
-								for n6 in n5:
-									
-									
-									if n6.tag == '{http://tempuri.org/}Estado':	
-										print(f'******Tag: {n6.tag}, Atributos: {n6.attrib}, valor: {n6.text}')
-										estado = n6.text	
-										return estado
-								break	
-											
+                                                        for n5 in reversed(n4):
+                                                                #print(f'n5-------------')
+                                                                #print(f'*****Tag: {n5.tag}, Atributos: {n5.attrib}, valor: {n5.text}')
+                                                                archivoid = 0
+                                                                archivonombre = ""
+                                                                estadonotificacionid = 0
+                                                                archivocontenido = ""
+                                                                fecha = ""
+                                                                estado = ""
+                                                                observaciones = ""
+                                                                motivo = ""
+                                                                responsablenotificacion = ""
+                                                                dependencianotificacion = ""
+                                                                archivoid = 0
+                                                                archivonombre = ""
+                                                                archivocontenido = ""
+                                                                for n6 in n5:
 
-		else:
+
+                                                                        if n6.tag == '{http://tempuri.org/}Estado':
+                                                                                print(f'******Tag: {n6.tag}, Atributos: {n6.attrib}, valor: {n6.text}')
+                                                                                estado = n6.text
+                                                                                fecha_estado = None
+                                                                                if n6.attrib:
+                                                                                        for clave, valor in n6.attrib.items():
+                                                                                                if 'fecha' in clave.lower():
+                                                                                                        fecha_estado = valor
+                                                                                                        break
+                                                                                        if fecha_estado is None:
+                                                                                                fecha_estado = next(iter(n6.attrib.values()), None)
+                                                                                return estado, fecha_estado
+                                                                break
+
+			return None, None
+
+
+                else:
 			print(f"⚠️ Error en la respuesta: Código {response.status_code}")
 			print(response.text)
 
 	except requests.exceptions.RequestException as e:
-	    print(f"❌ Error en la solicitud: {e}")
+		print(f"❌ Error en la solicitud: {e}")
+
+	return None, None
 
 
 
@@ -174,7 +186,7 @@ def pre_historial():
         cursor.execute(update_query)
         conexion.commit()
 
-        update_query = f"update enviocedulanotificacionpolicia set descartada= false, laststagesian = 'Sin info' where penviocedulanotificacionfechahora >= current_date - INTERVAL '1 days' and coalesce(descartada,false) = false"
+        update_query = f"update enviocedulanotificacionpolicia set descartada= false, laststagesian = 'Sin info', laststagesianfecha = null where penviocedulanotificacionfechahora >= current_date - INTERVAL '1 days' and coalesce(descartada,false) = false"
         cursor.execute(update_query)
         conexion.commit()
         cursor.execute("""
@@ -225,12 +237,12 @@ def pre_historial():
 	
 
 def llamar_his_mp(pmovimientoid,pactuacionid,pdomicilioelectronicopj,CODIGO_SEGUIMIENTO):
-	
-	try:
-		estado = lasstage(pmovimientoid,pactuacionid,pdomicilioelectronicopj,CODIGO_SEGUIMIENTO)
-		grabar_historico(estado,pmovimientoid,pactuacionid,pdomicilioelectronicopj,CODIGO_SEGUIMIENTO)
+
+        try:
+                estado, fecha_estado = lasstage(pmovimientoid,pactuacionid,pdomicilioelectronicopj,CODIGO_SEGUIMIENTO)
+                grabar_historico(estado,fecha_estado,pmovimientoid,pactuacionid,pdomicilioelectronicopj,CODIGO_SEGUIMIENTO)
 	except requests.exceptions.RequestException as e:
-	    print(f"❌ Error en la solicitud: {e}")
+		print(f"❌ Error en la solicitud: {e}")
 
 
 
@@ -255,21 +267,28 @@ def completar_envio(archivoid,archivonombre,CODIGO_SEGUIMIENTO,estadonotificacio
 
 
 
-def grabar_historico(estado, pmovimientoid, pactuacionid, pdomicilioelectronicopj, CODIGO_SEGUIMIENTO):
+def grabar_historico(estado, fecha_estado, pmovimientoid, pactuacionid, pdomicilioelectronicopj, CODIGO_SEGUIMIENTO):
     try:
         conexion = psycopg2.connect(**pgsql_config)
         cursor = conexion.cursor()
-        
-        print(f"{CODIGO_SEGUIMIENTO} -> {estado}")
 
-        if estado.upper() in ('ENTREGADA','NO ENTREGADA','DESCARTADA','FINALIZADA'):
+        estado_texto = estado or ''
+        print(f"{CODIGO_SEGUIMIENTO} -> {estado_texto} ({fecha_estado})")
+
+        if estado_texto.upper() in ('ENTREGADA','NO ENTREGADA','DESCARTADA','FINALIZADA'):
             finsian = True
             print(f"{CODIGO_SEGUIMIENTO} -> Finalizada")
         else:
             finsian = False
-	
-        update_query = f"update enviocedulanotificacionpolicia set laststagesian = '{estado}', finsian = {finsian} where codigoseguimientomp = '{CODIGO_SEGUIMIENTO}'"
-        cursor.execute(update_query)
+
+        update_query = """
+            UPDATE enviocedulanotificacionpolicia
+            SET laststagesian = %s,
+                laststagesianfecha = %s,
+                finsian = %s
+            WHERE codigoseguimientomp = %s
+        """
+        cursor.execute(update_query, (estado_texto, fecha_estado, finsian, CODIGO_SEGUIMIENTO))
         conexion.commit()
 
 
