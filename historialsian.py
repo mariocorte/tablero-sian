@@ -138,22 +138,23 @@ def lasstage(pmovimientoid, pactuacionid, pdomicilioelectronicopj, CODIGO_SEGUIM
                                 archivoid = 0
                                 archivonombre = ""
                                 archivocontenido = ""
+                                fecha_estado = None
+                                if n5.attrib:
+                                    for clave, valor in n5.attrib.items():
+                                        if 'fecha' in clave.lower():
+                                            fecha_estado = valor
+                                            break
+                                    if fecha_estado is None:
+                                        fecha_estado = next(
+                                            iter(n5.attrib.values()), None
+                                        )
+
                                 for n6 in n5:
                                     if n6.tag == '{http://tempuri.org/}Estado':
                                         print(
                                             f"******Tag: {n6.tag}, Atributos: {n6.attrib}, valor: {n6.text}"
                                         )
                                         estado = n6.text
-                                        fecha_estado = None
-                                        if n6.attrib:
-                                            for clave, valor in n6.attrib.items():
-                                                if 'fecha' in clave.lower():
-                                                    fecha_estado = valor
-                                                    break
-                                            if fecha_estado is None:
-                                                fecha_estado = next(
-                                                    iter(n6.attrib.values()), None
-                                                )
                                         return estado, fecha_estado
             return None, None
 
