@@ -14,6 +14,7 @@ import base64
 import sys
 from datetime import datetime
 import xml.etree.ElementTree as ET
+from typing import Optional, Union
 
 test = False
 
@@ -271,13 +272,52 @@ def completar_envio(archivoid,archivonombre,CODIGO_SEGUIMIENTO,estadonotificacio
 
 
 
+def _formatear_fecha_estado(fecha_estado: Optional[Union[str, datetime]]) -> str:
+    """Devuelve una representación legible de la fecha del estado."""
+
+    if isinstance(fecha_estado, datetime):
+        return fecha_estado.strftime("%d/%m/%Y %H:%M:%S")
+
+    if isinstance(fecha_estado, str):
+        fecha = fecha_estado.strip()
+        if not fecha:
+            return "Sin fecha"
+
+        fecha_normalizada = fecha.replace("Z", "+00:00")
+        try:
+            fecha_dt = datetime.fromisoformat(fecha_normalizada)
+            return fecha_dt.strftime("%d/%m/%Y %H:%M:%S")
+        except ValueError:
+            formatos = [
+                "%Y-%m-%d %H:%M:%S",
+                "%Y-%m-%dT%H:%M:%S",
+                "%Y-%m-%dT%H:%M:%S.%f",
+                "%Y-%m-%dT%H:%M:%S%z",
+                "%Y-%m-%dT%H:%M:%S.%f%z",
+                "%d/%m/%Y %H:%M:%S",
+                "%d/%m/%Y",
+            ]
+            for formato in formatos:
+                try:
+                    fecha_dt = datetime.strptime(fecha, formato)
+                    return fecha_dt.strftime("%d/%m/%Y %H:%M:%S")
+                except ValueError:
+                    continue
+            return fecha
+
+    return "Sin fecha"
+
+
 def grabar_historico(estado, fecha_estado, pmovimientoid, pactuacionid, pdomicilioelectronicopj, CODIGO_SEGUIMIENTO):
     try:
         conexion = psycopg2.connect(**pgsql_config)
         cursor = conexion.cursor()
 
         estado_texto = estado or ''
-        print(f"{CODIGO_SEGUIMIENTO} -> {estado_texto} ({fecha_estado})")
+        fecha_estado_texto = _formatear_fecha_estado(fecha_estado)
+        print(
+            f"{CODIGO_SEGUIMIENTO} -> Estado: {estado_texto} | Fecha: {fecha_estado_texto}"
+        )
 
         if estado_texto.upper() in ('ENTREGADA','NO ENTREGADA','DESCARTADA','FINALIZADA'):
             finsian = True
