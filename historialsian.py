@@ -4,6 +4,15 @@ import requests
 import xml.etree.ElementTree as ET
 from typing import Optional, Union, Iterable, Dict, Any, List
 
+
+def _log_step(func_name: str, status: str, message: str = "") -> None:
+    """Helper to print debug information with unified format."""
+
+    base = f"[{func_name}] {status}"
+    if message:
+        base = f"{base}: {message}"
+    print(base)
+
 test = False
 
 
@@ -49,6 +58,11 @@ else:
 
 def lasstage(pmovimientoid, pactuacionid, pdomicilioelectronicopj, CODIGO_SEGUIMIENTO):
     # Configuración del WebService
+    _log_step(
+        "lasstage",
+        "INICIO",
+        f"Procesando seguimiento {CODIGO_SEGUIMIENTO} (mov: {pmovimientoid}, act: {pactuacionid})",
+    )
     if test:
         HOST_WS_SIAN = "https://pruebasian.mpublico.gov.ar"  # Reemplaza con la URL real
     else:
@@ -123,20 +137,30 @@ def lasstage(pmovimientoid, pactuacionid, pdomicilioelectronicopj, CODIGO_SEGUIM
                         {}, ultimo_estado.get("estado") or ""
                     )
                 )
+                _log_step(
+                    "lasstage",
+                    "OK",
+                    f"Estados obtenidos correctamente para {CODIGO_SEGUIMIENTO}",
+                )
                 return ultimo_estado.get("estado"), ultimo_estado.get("fecha_raw")
+            _log_step("lasstage", "OK", "Sin estados disponibles en la respuesta")
             return None, None
 
         else:
-            print(f"⚠️ Error en la respuesta: Código {response.status_code}")
-            print(response.text)
+            _log_step(
+                "lasstage",
+                "ERROR",
+                f"Código de estado HTTP {response.status_code}. Respuesta: {response.text}",
+            )
 
     except requests.exceptions.RequestException as e:
-        print(f"❌ Error en la solicitud: {e}")
+        _log_step("lasstage", "ERROR", f"Error en la solicitud: {e}")
 
     return None, None
 
 
 def pre_historial():
+    _log_step("pre_historial", "INICIO", "Preparando actualización de registros")
     try:
         with psycopg2.connect(**pgsql_config) as conexion:
             with conexion.cursor() as cursor:
@@ -144,12 +168,18 @@ def pre_historial():
                     "update enviocedulanotificacionpolicia set finsian = True "
                     "where descartada = True and finsian <> True"
                 )
+                _log_step("pre_historial", "OK", "Registros descartados marcados como finalizados")
 
                 cursor.execute(
                     "update enviocedulanotificacionpolicia set descartada= false, "
                     "laststagesian = 'Sin info', fechalaststate = null "
                     "where penviocedulanotificacionfechahora >= current_date - INTERVAL '1 days' "
                     "and coalesce(descartada,false) = false"
+                )
+                _log_step(
+                    "pre_historial",
+                    "OK",
+                    "Registros reiniciados para seguimiento reciente",
                 )
 
                 conexion.commit()
@@ -175,22 +205,45 @@ def pre_historial():
                     )
                     for notas in cursor:
                         try:
+                            _log_step(
+                                "pre_historial",
+                                "INICIO",
+                                f"Procesando registro {notas}",
+                            )
                             llamar_his_mp(notas[0], notas[1], notas[2], notas[3])
+                            _log_step(
+                                "pre_historial",
+                                "OK",
+                                f"Registro {notas[3]} procesado correctamente",
+                            )
                         except Exception as e:
-                            print(f"Error procesando registro {notas}: {e}")
+                            _log_step(
+                                "pre_historial",
+                                "ERROR",
+                                f"Error procesando registro {notas}: {e}",
+                            )
 
+                _log_step("pre_historial", "OK", "Proceso de historial finalizado")
     except Exception as e:
-        print("Error en la conexión o consulta SQL")
-        print(f"Error: {e}")
+        _log_step(
+            "pre_historial",
+            "ERROR",
+            f"Error en la conexión o consulta SQL: {e}",
+        )
                 
     
 
 def llamar_his_mp(pmovimientoid, pactuacionid, pdomicilioelectronicopj, CODIGO_SEGUIMIENTO):
+    _log_step(
+        "llamar_his_mp",
+        "INICIO",
+        f"Obteniendo historial para {CODIGO_SEGUIMIENTO}",
+    )
     try:
         estado, fecha_estado = lasstage(
             pmovimientoid, pactuacionid, pdomicilioelectronicopj, CODIGO_SEGUIMIENTO
         )
-        grabar_historico(
+        exito_guardado = grabar_historico(
             estado,
             fecha_estado,
             pmovimientoid,
@@ -199,7 +252,22 @@ def llamar_his_mp(pmovimientoid, pactuacionid, pdomicilioelectronicopj, CODIGO_S
             CODIGO_SEGUIMIENTO,
         )
     except requests.exceptions.RequestException as e:
-        print(f"❌ Error en la solicitud: {e}")
+        _log_step("llamar_his_mp", "ERROR", f"Error en la solicitud: {e}")
+    except Exception as e:
+        _log_step("llamar_his_mp", "ERROR", f"Error inesperado: {e}")
+    else:
+        if exito_guardado:
+            _log_step(
+                "llamar_his_mp",
+                "OK",
+                f"Historial actualizado para {CODIGO_SEGUIMIENTO}",
+            )
+        else:
+            _log_step(
+                "llamar_his_mp",
+                "ERROR",
+                f"Historial no pudo actualizarse para {CODIGO_SEGUIMIENTO}",
+            )
 
 def _formatear_fecha_estado(fecha_estado: Optional[Union[str, datetime]]) -> str:
     """Devuelve una representación legible de la fecha del estado."""
@@ -245,6 +313,11 @@ def grabar_historico(
     pdomicilioelectronicopj,
     CODIGO_SEGUIMIENTO,
 ):
+    _log_step(
+        "grabar_historico",
+        "INICIO",
+        f"Actualizando registro {CODIGO_SEGUIMIENTO}",
+    )
     try:
         with psycopg2.connect(**pgsql_config) as conexion:
             with conexion.cursor() as cursor:
@@ -277,14 +350,26 @@ def grabar_historico(
                     (estado_texto, fecha_estado, finsian, CODIGO_SEGUIMIENTO),
                 )
                 conexion.commit()
+                _log_step(
+                    "grabar_historico",
+                    "OK",
+                    f"Registro {CODIGO_SEGUIMIENTO} actualizado ({estado_texto})",
+                )
+                return True
 
     except psycopg2.Error as e:
-        print(f"Error al insertar en la base de datos: {e}")
+        _log_step(
+            "grabar_historico",
+            "ERROR",
+            f"Error al actualizar la base de datos: {e}",
+        )
+    return False
 
 
 def _normalizar_estados(
     estados: Iterable[ET.Element], namespaces: Dict[str, str]
 ) -> List[Dict[str, Any]]:
+    _log_step("_normalizar_estados", "INICIO", "Normalizando estados recibidos")
     def obtener_texto(node: ET.Element, tag: str) -> Optional[str]:
         elemento = node.find(f"temp:{tag}", namespaces)
         if elemento is None:
@@ -318,6 +403,11 @@ def _normalizar_estados(
             }
         )
 
+    _log_step(
+        "_normalizar_estados",
+        "OK",
+        f"Total estados normalizados: {len(estados_normalizados)}",
+    )
     return estados_normalizados
 
 
@@ -329,6 +419,11 @@ def _guardar_historial_notpol(
     CODIGO_SEGUIMIENTO,
 ):
     if not estados:
+        _log_step(
+            "_guardar_historial_notpol",
+            "OK",
+            f"Sin estados para registrar en {CODIGO_SEGUIMIENTO}",
+        )
         return
 
     insert_query = """INSERT INTO notpolhistoricomp \
@@ -342,6 +437,14 @@ def _guardar_historial_notpol(
     try:
         with psycopg2.connect(**pgsql_config) as conexion:
             with conexion.cursor() as cursor:
+                if not isinstance(estados, list):
+                    estados = list(estados)
+                total_estados = len(estados)
+                _log_step(
+                    "_guardar_historial_notpol",
+                    "INICIO",
+                    f"Preparando inserción de {total_estados} estados para {CODIGO_SEGUIMIENTO}",
+                )
                 for estado in estados:
                     valores = (
                         estado.get("archivo_id"),
@@ -361,8 +464,17 @@ def _guardar_historial_notpol(
                     )
                     cursor.execute(insert_query, valores)
             conexion.commit()
+            _log_step(
+                "_guardar_historial_notpol",
+                "OK",
+                f"Historial guardado para {CODIGO_SEGUIMIENTO}",
+            )
     except psycopg2.Error as e:
-        print(f"Error al insertar historial notificación en panel: {e}")
+        _log_step(
+            "_guardar_historial_notpol",
+            "ERROR",
+            f"Error al insertar historial notificación en panel: {e}",
+        )
 
 
 def _parsear_fecha_estado_bd(fecha_estado: Optional[str]) -> Optional[datetime]:
