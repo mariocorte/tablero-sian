@@ -2,7 +2,7 @@ import psycopg2
 from datetime import datetime
 import requests
 import xml.etree.ElementTree as ET
-from typing import Optional, Union
+from typing import Optional, Union, Iterable, Dict, Any, List
 
 test = False
 
@@ -106,29 +106,24 @@ def lasstage(pmovimientoid, pactuacionid, pdomicilioelectronicopj, CODIGO_SEGUIM
                 ".//temp:HistorialEstados/temp:EstadoNotificacion", namespaces
             )
 
-            last_index = len(estados) - 1
+            estados_normalizados = _normalizar_estados(estados, namespaces)
 
-            for index, estado_node in enumerate(estados):
-                estado_text = None
-                fecha_estado = None
+            if estados_normalizados:
+                _guardar_historial_notpol(
+                    estados_normalizados,
+                    pmovimientoid,
+                    pactuacionid,
+                    pdomicilioelectronicopj,
+                    CODIGO_SEGUIMIENTO,
+                )
 
-                estado_element = estado_node.find("temp:Estado", namespaces)
-                if estado_element is not None:
-                    estado_text = estado_element.text
-
-                fecha_element = estado_node.find("temp:Fecha", namespaces)
-                if fecha_element is not None:
-                    fecha_estado = fecha_element.text
-
-                if not estado_text:
-                    continue
-
-                if index == last_index:
-                    print(
-                        f"******Tag: {{http://tempuri.org/}}Estado, Atributos: {estado_element.attrib if estado_element is not None else {}}, valor: {estado_text}"
+                ultimo_estado = estados_normalizados[-1]
+                print(
+                    "******Tag: {http://tempuri.org/}Estado, Atributos: {}, valor: {}".format(
+                        {}, ultimo_estado.get("estado") or ""
                     )
-                    return estado_text, fecha_estado
-                # registrarnotpolhst(estado_text, fecha_estado)
+                )
+                return ultimo_estado.get("estado"), ultimo_estado.get("fecha_raw")
             return None, None
 
         else:
@@ -285,6 +280,119 @@ def grabar_historico(
 
     except psycopg2.Error as e:
         print(f"Error al insertar en la base de datos: {e}")
+
+
+def _normalizar_estados(
+    estados: Iterable[ET.Element], namespaces: Dict[str, str]
+) -> List[Dict[str, Any]]:
+    def obtener_texto(node: ET.Element, tag: str) -> Optional[str]:
+        elemento = node.find(f"temp:{tag}", namespaces)
+        if elemento is None:
+            return None
+        if elemento.text is None:
+            return None
+        texto = elemento.text.strip()
+        return texto if texto else None
+
+    estados_normalizados = []
+
+    for estado_node in estados:
+        estado_id = obtener_texto(estado_node, "EstadoNotificacionId")
+        fecha_raw = obtener_texto(estado_node, "Fecha")
+        estados_normalizados.append(
+            {
+                "estado_id": int(estado_id) if estado_id else None,
+                "fecha": _parsear_fecha_estado_bd(fecha_raw),
+                "fecha_raw": fecha_raw,
+                "estado": obtener_texto(estado_node, "Estado"),
+                "observaciones": obtener_texto(estado_node, "Observaciones"),
+                "motivo": obtener_texto(estado_node, "Motivo"),
+                "responsable": obtener_texto(
+                    estado_node, "ResponsableNotificacion"
+                ),
+                "dependencia": obtener_texto(
+                    estado_node, "DependenciaNotificacion"
+                ),
+                "archivo_id": obtener_texto(estado_node, "ArchivoId"),
+                "archivo_nombre": obtener_texto(estado_node, "ArchivoNombre"),
+            }
+        )
+
+    return estados_normalizados
+
+
+def _guardar_historial_notpol(
+    estados: Iterable[Dict[str, Any]],
+    pmovimientoid,
+    pactuacionid,
+    pdomicilioelectronicopj,
+    CODIGO_SEGUIMIENTO,
+):
+    if not estados:
+        return
+
+    insert_query = """INSERT INTO notpolhistoricomp \
+        (notpolhistoricomparchivoid, notpolhistoricomparchivonombre, notpolhistoricompestadonid, \
+        notpolhistoricomparchcont, notpolhistoricompfecha, notpolhistoricompestado, \
+        notpolhistoricompobservaciones, notpolhistoricompmotivo, notpolhistoricompresponsable, \
+        notpolhistoricompdependencia, pmovimientoid, pactuacionid, pdomicilioelectronicopj, \
+        codigoseguimientomp) \
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (notpolhistoricompestadonid) DO NOTHING;"""
+
+    try:
+        with psycopg2.connect(**panel_config) as conexion:
+            with conexion.cursor() as cursor:
+                for estado in estados:
+                    valores = (
+                        estado.get("archivo_id"),
+                        estado.get("archivo_nombre"),
+                        estado.get("estado_id"),
+                        None,
+                        estado.get("fecha"),
+                        estado.get("estado"),
+                        estado.get("observaciones"),
+                        estado.get("motivo"),
+                        estado.get("responsable"),
+                        estado.get("dependencia"),
+                        pmovimientoid,
+                        pactuacionid,
+                        pdomicilioelectronicopj,
+                        CODIGO_SEGUIMIENTO,
+                    )
+                    cursor.execute(insert_query, valores)
+            conexion.commit()
+    except psycopg2.Error as e:
+        print(f"Error al insertar historial notificación en panel: {e}")
+
+
+def _parsear_fecha_estado_bd(fecha_estado: Optional[str]) -> Optional[datetime]:
+    if not fecha_estado:
+        return None
+
+    fecha = fecha_estado.strip()
+    if not fecha:
+        return None
+
+    fecha_normalizada = fecha.replace("Z", "+00:00")
+
+    formatos = [
+        "%Y-%m-%dT%H:%M:%S%z",
+        "%Y-%m-%dT%H:%M:%S.%f%z",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S.%f",
+        "%Y-%m-%d %H:%M:%S",
+    ]
+
+    for formato in formatos:
+        try:
+            return datetime.strptime(fecha_normalizada, formato)
+        except ValueError:
+            continue
+
+    try:
+        return datetime.fromisoformat(fecha_normalizada)
+    except ValueError:
+        return None
 
 if __name__ == "__main__":
     pre_historial()
