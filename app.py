@@ -37,20 +37,39 @@ query_sql_cache: Optional[str] = None
 queryvl_cache: Optional[str] = None
 
 
+def debug_print(function_name: str, status: str, detail: Optional[str] = None) -> None:
+    """Formato estándar para los mensajes de depuración."""
+    mensaje = f"[{function_name}] Estado: {status}."
+    if detail:
+        mensaje += f" Detalle: {detail}"
+    print(mensaje)
+
+
 def ensure_queries_loaded() -> Tuple[Optional[str], Optional[str]]:
     """Carga las consultas SQL solo cuando son necesarias."""
     global query_sql_cache, queryvl_cache
+    debug_print("ensure_queries_loaded", "inicio", "Verificando cache de consultas")
     if query_sql_cache is None:
         query_sql_cache = cargar_consulta("SQL-ACT-GAR-SIAN")
+        if query_sql_cache:
+            debug_print("ensure_queries_loaded", "exito", "Consulta SQL-ACT-GAR-SIAN cargada")
+        else:
+            debug_print("ensure_queries_loaded", "error", "Posible causa: Consulta SQL-ACT-GAR-SIAN no disponible")
     if queryvl_cache is None:
         queryvl_cache = cargar_consulta("SQL-ACT-VIO-SIAN")
+        if queryvl_cache:
+            debug_print("ensure_queries_loaded", "exito", "Consulta SQL-ACT-VIO-SIAN cargada")
+        else:
+            debug_print("ensure_queries_loaded", "error", "Posible causa: Consulta SQL-ACT-VIO-SIAN no disponible")
     return query_sql_cache, queryvl_cache
 
 
 def main(params: QueryParams):
+    debug_print("main", "inicio", f"Parámetros recibidos -> tiempo: {params.tiempo}, test: {params.test}")
     query_sql, queryvl = ensure_queries_loaded()
 
     if not query_sql or not queryvl:
+        debug_print("main", "error", "Posible causa: consultas SQL no cargadas")
         return {"mensaje": "No se pudieron cargar las consultas SQL requeridas.", "errores": 1}
 
     if params.test == 0:
@@ -110,20 +129,22 @@ def main(params: QueryParams):
     impix = 0
 
     while paso:
-        print(f"Iniciando proceso Penal a las {datetime.now()}")
+        debug_print("main", "detalle", f"Iniciando proceso Penal a las {datetime.now()}")
         procesar_e_insertar(pgsql_config, panel_config, test, query_sql)
-        print("Proceso completado Penal. Esperando próximo ciclo...")
-        print(f"Procesados Penal:{impix}")
+        debug_print("main", "exito", "Proceso Penal completado")
+        debug_print("main", "detalle", f"Procesados Penal: {impix}")
         impix = 0
-        print(f"Iniciando proceso Violencia a las {datetime.now()}")
+        debug_print("main", "detalle", f"Iniciando proceso Violencia a las {datetime.now()}")
         procesar_e_insertar_iw(pgsql_config, pgsql_iw, panel_config, test, queryvl)
-        print("Proceso completado Violencia. Esperando próximo ciclo...")
-        print(f"Procesados Violencia:{impix}")
+        debug_print("main", "exito", "Proceso Violencia completado")
+        debug_print("main", "detalle", f"Procesados Violencia: {impix}")
         # time.sleep(params.tiempo)  # Ejecutar cada 5 minutos
         paso = False
     try:
+        debug_print("main", "exito", "Proceso principal finalizado sin errores")
         return {"mensaje": "Proceso completado correctamente", "errores": 0}
     except Exception as e:
+        debug_print("main", "error", f"Posible causa: {e}")
         return {f"error: {e}"}
 
 
@@ -137,9 +158,10 @@ def cargar_consulta(archivo):
     }
     query = f"""SELECT parametroblobfile FROM parametro \
              WHERE parametronombre = '{archivo}';"""
-    print(query)
+    debug_print("cargar_consulta", "detalle", f"Ejecutando consulta: {query}")
     connlp = None
     try:
+        debug_print("cargar_consulta", "inicio", f"Solicitando parámetro {archivo}")
         connlp = psycopg2.connect(**pgsql_config)
         respuesta = connlp.cursor()
         respuesta.execute(query)
@@ -153,9 +175,10 @@ def cargar_consulta(archivo):
                 retorno = retorno.decode('utf-8', errors='ignore')
             elif not isinstance(retorno, str):
                 retorno = str(retorno)
+        debug_print("cargar_consulta", "exito", f"Consulta {archivo} obtenida")
         return retorno
     except Exception as e:
-        print(f"Error al cargar consulta {archivo}: {e}")
+        debug_print("cargar_consulta", "error", f"Posible causa: {e}")
         return None
     finally:
         if connlp:
@@ -164,8 +187,10 @@ def cargar_consulta(archivo):
 
 def ejecutar_sqlix(query_sql):
     if not query_sql:
+        debug_print("ejecutar_sqlix", "error", "Posible causa: consulta vacía")
         return []
     try:
+        debug_print("ejecutar_sqlix", "inicio", "Conectando a Informix")
         conn = jaydebeapi.connect(
             driver_class,
             database_url,
@@ -176,25 +201,28 @@ def ejecutar_sqlix(query_sql):
         cursor.execute(query_sql)
         rows = cursor.fetchall()
         conn.close()
+        debug_print("ejecutar_sqlix", "exito", f"Filas obtenidas: {len(rows)}")
         return rows
     except Exception as e:
-        print(f"Error al ejecutar Informix: {e}")
+        debug_print("ejecutar_sqlix", "error", f"Posible causa: {e}")
         return []
 
 
 def ejecutar_iw(pgsql_iw, queryvl):
-    print("ejecutar_iw")
     if not queryvl:
+        debug_print("ejecutar_iw", "error", "Posible causa: consulta de Iurix Web vacía")
         return []
     try:
+        debug_print("ejecutar_iw", "inicio", "Conectando a Iurix Web")
         conn = psycopg2.connect(**pgsql_iw)
         cursor = conn.cursor()
         cursor.execute(queryvl)
         rows = cursor.fetchall()
         conn.close()
+        debug_print("ejecutar_iw", "exito", f"Filas obtenidas: {len(rows)}")
         return rows
     except Exception as e:
-        print(f"Error al ejecutar IW: {e}")
+        debug_print("ejecutar_iw", "error", f"Posible causa: {e}")
         return []
 
 
@@ -212,6 +240,11 @@ def insertar_datos_enviocedula(conn, datos):
     try:
         with conn.cursor() as cursor:
             try:
+                debug_print(
+                    "insertar_datos_enviocedula",
+                    "inicio",
+                    f"Insertando movimiento {datos.get('pmovimientoid')} - actuación {datos.get('pactuacionid')}"
+                )
                 query = """
                 INSERT INTO public.enviocedulanotificacionpolicia (
                     pmovimientoid, pactuacionid, pdomicilioelectronicopj, pfechayhora, pfechahora,
@@ -240,15 +273,24 @@ def insertar_datos_enviocedula(conn, datos):
                 cursor.execute(query, datos)
                 if cursor.rowcount > 0:
                     conn.commit()
-                    print(f"Datos insertados para pmovimientoid: {datos['pactuacionid']}")
+                    debug_print(
+                        "insertar_datos_enviocedula",
+                        "exito",
+                        f"Registro almacenado para movimiento {datos.get('pmovimientoid')}"
+                    )
                     return True
                 else:
+                    debug_print(
+                        "insertar_datos_enviocedula",
+                        "advertencia",
+                        "No se insertó ninguna fila, posible duplicado"
+                    )
                     return False
             except Exception as er:
-                print(er)
+                debug_print("insertar_datos_enviocedula", "error", f"Posible causa: {er}")
     except Exception as e:
         conn.rollback()
-        print(f"Error al insertar datos: {e}")
+        debug_print("insertar_datos_enviocedula", "error", f"Posible causa: {e}")
         return False
 
 
@@ -268,15 +310,24 @@ def ejecutar_convertidor_pdf(pmovimientoid, pactuacionid, pdomicilioelectronicop
         }
     }
     try:
+        debug_print(
+            "ejecutar_convertidor_pdf",
+            "inicio",
+            f"Solicitud de conversión movimiento {pmovimientoid} - actuación {pactuacionid}"
+        )
         response = requests.post(url, headers=headers, json=payload)
         if response.status_code == 200:
-            print("✅ Conversión a PDF exitosa.")
+            debug_print("ejecutar_convertidor_pdf", "exito", "Conversión a PDF exitosa")
             return True
         else:
-            print(f"Error en conversión a PDF: {response.status_code}, {response.text}")
+            debug_print(
+                "ejecutar_convertidor_pdf",
+                "error",
+                f"Posible causa: HTTP {response.status_code} - {response.text}"
+            )
             return False
     except Exception as e:
-        print(f"Error al convertir a PDF: {e}")
+        debug_print("ejecutar_convertidor_pdf", "error", f"Posible causa: {e}")
         return False
 
 
@@ -294,7 +345,7 @@ def ejecutar_envio_cedulas(pgsql_config, cantidad, urlsian, pmovimientoid, pactu
     try:
         pass
     except Exception as e:
-        print(f"Error al enviar cédulas: {e}")
+        debug_print("ejecutar_envio_cedulas", "error", f"Posible causa: {e}")
         return False
 
 
@@ -303,6 +354,7 @@ def ejecutarpaso(proceso, panel_config):
         where procesosatnombre = '{proceso}' ;"""
     try:
         ejecutarpaso = False
+        debug_print("ejecutarpaso", "inicio", f"Validando ejecución para {proceso}")
         connlp = psycopg2.connect(**panel_config)
         horaaut = connlp.cursor()
         horaaut.execute(query)
@@ -319,17 +371,19 @@ def ejecutarpaso(proceso, panel_config):
             try:
                 if datetime.now() > proxima:
                     ejecutarpaso = True
+                    debug_print("ejecutarpaso", "exito", f"Paso {proceso} habilitado para ejecución")
             except Exception:
-                print("Error en comparacion 1")
+                debug_print("ejecutarpaso", "error", "Posible causa: error en comparación de fechas")
                 ejecutarpaso = False
     except Exception as e:
-        print(f"Error en comparacion 2 {e}")
+        debug_print("ejecutarpaso", "error", f"Posible causa: {e}")
         ejecutarpaso = False
 
     return ejecutarpaso
 
 
 def registrar_paso(proceso, codigo_proceso, panel_config):
+    debug_print("registrar_paso", "inicio", f"Registrando ejecución de {proceso}")
     connrp = psycopg2.connect(**panel_config)
     try:
         with connrp.cursor() as cursor:
@@ -344,24 +398,29 @@ def registrar_paso(proceso, codigo_proceso, panel_config):
             """
             cursor.execute(query)
             connrp.commit()
-            print(f"Datos de procesos actualizados {proceso} a hrs: {ahora}")
+            debug_print("registrar_paso", "exito", f"Proceso {proceso} actualizado a {ahora}")
     except Exception as e:
-        print(f"Error al registrar paso {e}")
+        debug_print("registrar_paso", "error", f"Posible causa: {e}")
 
 
 def procesar_e_insertar(pgsql_config, panel_config, test, query_sql):
-    print("Procesar e insertar IURIX")
+    debug_print("procesar_e_insertar", "inicio", "Procesando datos de Informix")
     impix = 0
     try:
         rows = ejecutar_sqlix(query_sql)
         if not rows:
-            print("No se obtuvieron datos de Informix.")
+            debug_print("procesar_e_insertar", "advertencia", "No se obtuvieron datos de Informix")
             return
         conn = psycopg2.connect(**pgsql_config)
         errores = []
         actualizar = False
         for fila in rows:
             try:
+                debug_print(
+                    "procesar_e_insertar",
+                    "detalle",
+                    f"Iniciando registro movimiento {fila[0]} - actuación {fila[2]}"
+                )
                 hora_audiencia = fila[20].strip().replace('.0', '').replace(' HS:00', ":00").replace('.', ':')
                 valorarchivo = fila[26]
                 if not es_base64(valorarchivo):
@@ -419,38 +478,54 @@ def procesar_e_insertar(pgsql_config, panel_config, test, query_sql):
                         pdomicilioelectronicopj = datos_insertar['pdomicilioelectronicopj']
                         if ejecutar_convertidor_pdf(pmovimientoid, pactuacionid, pdomicilioelectronicopj, './static/apiconsumo/cnotpolicia', test):
                             if test:
-                                print("test")
+                                debug_print("procesar_e_insertar", "exito", "Registro test procesado correctamente")
                             else:
-                                print("prod")
+                                debug_print("procesar_e_insertar", "exito", "Registro producción procesado correctamente")
+                        else:
+                            debug_print(
+                                "procesar_e_insertar",
+                                "error",
+                                f"Movimiento {pmovimientoid} - posible causa: conversión PDF fallida"
+                            )
+                    else:
+                        debug_print(
+                            "procesar_e_insertar",
+                            "error",
+                            f"Movimiento {datos_insertar['pmovimientoid']} - posible causa: inserción en enviocedula sin filas"
+                        )
             except Exception as e:
                 errores.append(f"Error al procesar fila {fila[0]}: {e}")
-                print(f"Error al procesar fila {fila[0]}: {e}")
+                debug_print("procesar_e_insertar", "error", f"Movimiento {fila[0]} - posible causa: {e}")
 
         if actualizar:
             registrar_paso("paso1", 1, panel_config)
         conn.close()
         if errores:
-            print("Algunos registros no pudieron procesarse:")
             for error in errores:
-                print(error)
+                debug_print("procesar_e_insertar", "error", error)
         else:
-            print("Todos los registros procesados correctamente.")
+            debug_print("procesar_e_insertar", "exito", "Todos los registros procesados correctamente")
     except Exception as e:
-        print(f"Error general: {e}")
+        debug_print("procesar_e_insertar", "error", f"Posible causa general: {e}")
 
 
 def procesar_e_insertar_iw(pgsql_config, pgsql_iw, panel_config, test, queryvl):
-    print("procesar e insertar iw")
+    debug_print("procesar_e_insertar_iw", "inicio", "Procesando datos de Iurix Web")
     try:
         rows = ejecutar_iw(pgsql_iw, queryvl)
         if not rows:
-            print("No se obtuvieron datos de Iurix Web.")
+            debug_print("procesar_e_insertar_iw", "advertencia", "No se obtuvieron datos de Iurix Web")
             return
         conn = psycopg2.connect(**pgsql_config)
         errores = []
         actualizar = False
         for fila in rows:
             try:
+                debug_print(
+                    "procesar_e_insertar_iw",
+                    "detalle",
+                    f"Iniciando registro movimiento {fila[0]} - actuación {fila[2]}"
+                )
                 hora_audiencia = fila[20]
                 datos_hex = fila[26]
                 datos_bytes = bytes(datos_hex)
@@ -515,7 +590,11 @@ def procesar_e_insertar_iw(pgsql_config, pgsql_iw, panel_config, test, queryvl):
                     if insertar_datos_enviocedula(conn, datos_insertar):
                         resultado = insertar_documento(valorarchivoactuacion, f"900{str(fila[21]).zfill(9)}.pdf", 8880, test)
                         if resultado:
-                            print("Respuesta del webservice:", json.dumps(resultado, indent=2))
+                            debug_print(
+                                "procesar_e_insertar_iw",
+                                "detalle",
+                                f"Respuesta gestor actuación: {json.dumps(resultado, ensure_ascii=False)}"
+                            )
                             rs = json.dumps(resultado, indent=2)
                             datadelws = json.loads(rs)
 
@@ -526,36 +605,49 @@ def procesar_e_insertar_iw(pgsql_config, pgsql_iw, panel_config, test, queryvl):
 
                             resultado = insertar_documento(valorarchivo, f"{str(fila[34])}.pdf", 8880, test)
                             if resultado:
-                                print("Respuesta del webservice:", json.dumps(resultado, indent=2))
+                                debug_print(
+                                    "procesar_e_insertar_iw",
+                                    "detalle",
+                                    f"Respuesta gestor notificación: {json.dumps(resultado, ensure_ascii=False)}"
+                                )
                                 rs = json.dumps(resultado, indent=2)
                                 datadelws = json.loads(rs)
-                                print(f"Previa:{datadelws}")
+                                debug_print("procesar_e_insertar_iw", "detalle", f"Respuesta parseada: {datadelws}")
                                 if datadelws.get('resultado', False):
                                     sgdocidc = datadelws.get('sgdDocId')
-                                    print(f"sgdod:{sgdocid}")
+                                    debug_print("procesar_e_insertar_iw", "detalle", f"sgdDocId obtenido: {sgdocid}")
                                     if sgdocidc is not None:
                                         grabarcedencedulasconqr(int(fila[0]), int(fila[2]), str(fila[22]).strip(), sgdocidc, pgsql_config)
                                         formularioqr = obtener_formulario_qr(int(fila[0]), int(fila[2]), str(fila[22]).strip(), sgdocid, pgsql_config, urlpj='https://appweb.justiciasalta.gov.ar:8091/policia/api/cnotpolicia/incrustarqrpdf')
-                        else:
-                            print("No se pudo completar la solicitud.")
+                            else:
+                                debug_print(
+                                    "procesar_e_insertar_iw",
+                                    "error",
+                                    f"Movimiento {datos_insertar['pmovimientoid']} - posible causa: respuesta inválida del servicio"
+                                )
+                    else:
+                        debug_print(
+                            "procesar_e_insertar_iw",
+                            "error",
+                            f"Movimiento {datos_insertar['pmovimientoid']} - posible causa: inserción en enviocedula sin filas"
+                        )
                         pmovimientoid = datos_insertar['pmovimientoid']
                         pactuacionid = datos_insertar['pactuacionid']
                         pdomicilioelectronicopj = datos_insertar['pdomicilioelectronicopj']
             except Exception as e:
                 errores.append(f"Error al procesar fila {fila[1]}: {e}")
-                print(f"Error al procesar fila {fila[1]}: {e}")
+                debug_print("procesar_e_insertar_iw", "error", f"Movimiento {fila[1]} - posible causa: {e}")
 
         if actualizar:
             registrar_paso("paso21", 21, panel_config)
         conn.close()
         if errores:
-            print("Algunos registros no pudieron procesarse:")
             for error in errores:
-                print(error)
+                debug_print("procesar_e_insertar_iw", "error", error)
         else:
-            print("Todos los registros procesados correctamente.")
+            debug_print("procesar_e_insertar_iw", "exito", "Todos los registros procesados correctamente")
     except Exception as e:
-        print(f"Error general: {e}")
+        debug_print("procesar_e_insertar_iw", "error", f"Posible causa general: {e}")
 
 
 def insertar_documento(base64_data, nombre_archivo, numero_legajo, test=True):
@@ -576,9 +668,10 @@ def insertar_documento(base64_data, nombre_archivo, numero_legajo, test=True):
     try:
         response = requests.post(url, json=data)
         response.raise_for_status()
+        debug_print("insertar_documento", "exito", "Documento enviado al gestor documental")
         return response.json()
     except requests.exceptions.RequestException as e:
-        print(f"Error al llamar al webservice: {e}")
+        debug_print("insertar_documento", "error", f"Posible causa: {e}")
         return None
 
 
@@ -590,17 +683,17 @@ def grabarcedencedulasconqr(pmovimientoid, pactuacionid, pdomicilioelectronicopj
         with connrp.cursor() as cursor:
             ahora = datetime.now()
             query = f"""
-            update cedulasconcodigoqr 
+            update cedulasconcodigoqr
             set uidgestorcedula = '{sgdocid}'
             where pmovimientoid = {pmovimientoid} and
             pactuacionid = {pactuacionid} and
             pdomicilioelectronicopj = '{pdomicilioelectronicopj}'         ;
             """
             cursor.execute(query)
-            print(f"Datos generados en tabla de qrs")
+            debug_print("grabarcedencedulasconqr", "exito", "Registro actualizado en cedulasconcodigoqr")
             connrp.commit()
     except Exception as e:
-        print(f"Error al registrar paso {e}")
+        debug_print("grabarcedencedulasconqr", "error", f"Posible causa: {e}")
 
 
 def grabarcedulasconqr(pmovimientoid, pactuacionid, pdomicilioelectronicopj, sgdocid, pgsql_config):
@@ -614,14 +707,14 @@ def grabarcedulasconqr(pmovimientoid, pactuacionid, pdomicilioelectronicopj, sgd
             insert into cedulasconcodigoqr (pmovimientoid,pactuacionid,pdomicilioelectronicopj,uidgestor) values ({pmovimientoid},{pactuacionid},'{pdomicilioelectronicopj}','{sgdocid}')         ;
             """
             cursor.execute(query)
-            print(f"Datos generados en tabla de qrs")
+            debug_print("grabarcedulasconqr", "exito", "Registro insertado en cedulasconcodigoqr")
             connrp.commit()
     except Exception as e:
-        print(f"Error al registrar paso {e}")
+        debug_print("grabarcedulasconqr", "error", f"Posible causa: {e}")
 
 
 def obtener_formulario_qr(pmovimientoid, pactuacionid, pdomicilioelectronicopj, sgdocid, pgsql_config, urlpj):
-    print("Ingrese a obtener_formulario_qr")
+    debug_print("obtener_formulario_qr", "inicio", f"Preparando solicitud para movimiento {pmovimientoid}")
     connrp = psycopg2.connect(**pgsql_config)
     cursor = connrp.cursor()
     payload = {
@@ -634,11 +727,11 @@ def obtener_formulario_qr(pmovimientoid, pactuacionid, pdomicilioelectronicopj, 
     }
     headers = {'Content-Type': 'application/json'}
     try:
-        print("Enviando solicitud QR...")
+        debug_print("obtener_formulario_qr", "detalle", "Enviando solicitud QR")
         response = requests.post(urlpj, headers=headers, json=payload)
 
-        print(f"Código de estado: {response.status_code}")
-        print(f"Contenido de la respuesta: {response.text}")
+        debug_print("obtener_formulario_qr", "detalle", f"Código de estado: {response.status_code}")
+        debug_print("obtener_formulario_qr", "detalle", f"Contenido de la respuesta: {response.text}")
 
         if response.status_code == 200:
             json_response = response.json()
@@ -648,7 +741,7 @@ def obtener_formulario_qr(pmovimientoid, pactuacionid, pdomicilioelectronicopj, 
             if errores is not None:
                 raise Exception(f"Errores reportados: {errores}")
 
-            print("✅ La tarea de envío de cédulas se completó con éxito.")
+            debug_print("obtener_formulario_qr", "exito", "Servicio devolvió formulario QR")
 
             fqr = json.dumps(json_response, indent=2)
 
@@ -664,7 +757,7 @@ def obtener_formulario_qr(pmovimientoid, pactuacionid, pdomicilioelectronicopj, 
                 cursor = connrp.cursor()
                 cursor.execute(updateqr)
                 connrp.commit()
-                print("paso1")
+                debug_print("obtener_formulario_qr", "detalle", "Actualización de pdfgenerado completada")
                 insertadjuntos = f"""
                 insert into adjuntospolicia  (pmovimientoid, pactuacionid, pdomicilioelectronicopj ,adjuntospolicianombre,adjuntospoliciabase64) 
                 values({pmovimientoid},{pactuacionid},'{pdomicilioelectronicopj}',(select parchivoactnombre from enviocedulanotificacionpolicia en where 
@@ -677,7 +770,7 @@ def obtener_formulario_qr(pmovimientoid, pactuacionid, pdomicilioelectronicopj, 
                 cursor.execute(insertadjuntos)
                 connrp.commit()
 
-                print("paso2")
+                debug_print("obtener_formulario_qr", "detalle", "Inserción en adjuntospolicia completada")
                 updateec = f"""
                 update enviocedulanotificacionpolicia set pactuacionarchivo = '{formularioqr}' where pmovimientoid = {pmovimientoid} and pactuacionid = {pactuacionid} and pdomicilioelectronicopj = '{pdomicilioelectronicopj}'         ;
                 """
@@ -686,22 +779,22 @@ def obtener_formulario_qr(pmovimientoid, pactuacionid, pdomicilioelectronicopj, 
                 cursor = connrp.cursor()
                 cursor.execute(updateec)
 
-                print("paso 3")
+                debug_print("obtener_formulario_qr", "detalle", "Actualización de enviocedulanotificacionpolicia completada")
 
                 connrp.commit()
 
             except Exception as e:
-                print(f"Error al crear Formulario QR: {e}")
+                debug_print("obtener_formulario_qr", "error", f"Posible causa al crear formulario: {e}")
 
         else:
             raise Exception(f"Error de conexión: Código HTTP {response.status_code}, Respuesta: {response.text}")
 
     except Exception as e:
-        print(f"Error al llamar al servicio web de envío de cédulas: {e}")
+        debug_print("obtener_formulario_qr", "error", f"Posible causa en servicio QR: {e}")
 
 
 def registrar_error(dbgusername, dbguservalor, dbguserprograma):
-    print(f"Registrar  Error")
+    debug_print("registrar_error", "inicio", "Registrando error en dbguser")
     panel_test = {
             "host": "10.18.250.251",
             "port": "5432",
@@ -712,11 +805,11 @@ def registrar_error(dbgusername, dbguservalor, dbguserprograma):
     connpanel = psycopg2.connect(**panel_test)
     try:
         query=f"insert into dbguser (dbguservalor,dbguserprograma) values ('{dbguservalor}','{dbguserprograma}')"
-        print(f"Error {query}")
+        debug_print("registrar_error", "detalle", f"Ejecutando: {query}")
         logserror = connpanel.cursor()
         logserror.execute(query)
     except requests.exceptions.RequestException as e:
-        print(f"Error al insertar error '{e}'")
+        debug_print("registrar_error", "error", f"Posible causa: {e}")
         return None
 
 
@@ -736,17 +829,16 @@ def ejecutar_control_cedulas(pgsql_config, pmovimientoid, pactuacionid, pdomicil
                 for subchild in child:
                     if subchild.tag == "{http://tempuri.org/}CodigosSeguimiento":
                         for codigo in subchild:
-                            print(f"{registro[26]}  Codigo: {codigo.text}")
+                            debug_print("ejecutar_control_cedulas", "detalle", f"{registro[26]} Código: {codigo.text}")
                             update_query = f"UPDATE enviocedulanotificacionpolicia SET codigoseguimientomp = '{codigo.text}' WHERE pmovimientoid = {pmovimientoid} and pactuacionid = {pactuacionid} and pdomicilioelectronicopj = '{pdomicilioelectronicopj}'"
-                            print(update_query)
+                            debug_print("ejecutar_control_cedulas", "detalle", f"Actualización ejecutada: {update_query}")
                             cursor.execute(update_query)
                             conexion.commit()
 
-        print("control 1 ok")
+        debug_print("ejecutar_control_cedulas", "exito", "Control completado")
 
     except Exception as e:
-        print("tabla con errores")
-        print(f"Error: {e} / {registro[1]} ")
+        debug_print("ejecutar_control_cedulas", "error", f"Posible causa: {e} / {registro[1]}")
 
     finally:
         if 'cursor' in locals():
@@ -796,7 +888,7 @@ if __name__ == "__main__":
     if args.tiempo is not None and args.test is not None:
         params = QueryParams(tiempo=args.tiempo, test=args.test)
         resultado = main(params)
-        print(json.dumps(resultado, indent=2, ensure_ascii=False))
+        debug_print("main", "detalle", json.dumps(resultado, indent=2, ensure_ascii=False))
     else:
         import uvicorn
 
