@@ -1,18 +1,6 @@
-import threading
-import time
-import tkinter as tk
-from tkinter import ttk
 import psycopg2
-import jaydebeapi
-
-import psycopg2
-from psycopg2 import sql
-from datetime import datetime, timedelta
-import json
-import requests
-import base64
-import sys
 from datetime import datetime
+import requests
 import xml.etree.ElementTree as ET
 from typing import Optional, Union
 
@@ -149,66 +137,50 @@ def lasstage(pmovimientoid, pactuacionid, pdomicilioelectronicopj, CODIGO_SEGUIM
 
 def pre_historial():
     try:
-        # Conectar a la base de datos
-        conexion = psycopg2.connect(**pgsql_config)
-        cursor = conexion.cursor()
+        with psycopg2.connect(**pgsql_config) as conexion:
+            with conexion.cursor() as cursor:
+                cursor.execute(
+                    "update enviocedulanotificacionpolicia set finsian = True "
+                    "where descartada = True and finsian <> True"
+                )
 
+                cursor.execute(
+                    "update enviocedulanotificacionpolicia set descartada= false, "
+                    "laststagesian = 'Sin info', fechalaststate = null "
+                    "where penviocedulanotificacionfechahora >= current_date - INTERVAL '1 days' "
+                    "and coalesce(descartada,false) = false"
+                )
 
-        update_query = f"update enviocedulanotificacionpolicia set finsian = True where descartada = True and finsian <> True"
-        cursor.execute(update_query)
-        conexion.commit()
+                conexion.commit()
 
-        update_query = (
-            "update enviocedulanotificacionpolicia set descartada= false, laststagesian = 'Sin info', "
-            "fechalaststate = null where penviocedulanotificacionfechahora >= current_date - INTERVAL '1 days' "
-            "and coalesce(descartada,false) = false"
-        )
-        cursor.execute(update_query)
-        conexion.commit()
-        cursor.execute("""
-            SELECT e.pmovimientoid, e.pactuacionid, e.pdomicilioelectronicopj, e.codigoseguimientomp  
-            FROM enviocedulanotificacionpolicia e 
-            WHERE e.codigoseguimientomp IS NOT NULL and upper(trim(e.codigoseguimientomp)) <> 'NONE'
-            AND  e.finsian = false
-            AND  e.pdac_codigo = 'CEDURG'
-            AND  e.penviocedulanotificacionfechahora >= current_date - INTERVAL '15 days'
-        """)
-        registros = cursor.fetchall()
-        #print(registros)
-        for notas in registros:
-            try:
-                llamar_his_mp(notas[0], notas[1], notas[2], notas[3])
-            except Exception as e:
-                print(f"Error procesando registro {notas}: {e}")
+                consultas = [
+                    ("AND  e.pdac_codigo = 'CEDURG'", "15 days"),
+                    ("AND  e.pdac_codigo <> 'CEDURG'", "5 days"),
+                ]
 
-        conexion.commit()        
-        cursor.execute("""
-            SELECT e.pmovimientoid, e.pactuacionid, e.pdomicilioelectronicopj, e.codigoseguimientomp  
-            FROM enviocedulanotificacionpolicia e 
-            WHERE e.codigoseguimientomp IS NOT NULL and upper(trim(e.codigoseguimientomp)) <> 'NONE'
-            AND  e.finsian = false
-            AND  e.pdac_codigo <> 'CEDURG'
-            AND  e.penviocedulanotificacionfechahora >= current_date - INTERVAL '5 days'
-        """)
-        registros = cursor.fetchall()
-        #print(registros)
-        for notas in registros:
-            try:
-                llamar_his_mp(notas[0], notas[1], notas[2], notas[3])
-            except Exception as e:
-                print(f"Error procesando registro {notas}: {e}")
-        conexion.commit()        
+                base_query = (
+                    "SELECT e.pmovimientoid, e.pactuacionid, e.pdomicilioelectronicopj, e.codigoseguimientomp "
+                    "FROM enviocedulanotificacionpolicia e "
+                    "WHERE e.codigoseguimientomp IS NOT NULL "
+                    "AND upper(trim(e.codigoseguimientomp)) <> 'NONE' "
+                    "AND e.finsian = false "
+                    "{extra_condition} "
+                    "AND e.penviocedulanotificacionfechahora >= current_date - INTERVAL %s"
+                )
+
+                for condicion_extra, intervalo in consultas:
+                    cursor.execute(
+                        base_query.format(extra_condition=condicion_extra), (intervalo,)
+                    )
+                    for notas in cursor:
+                        try:
+                            llamar_his_mp(notas[0], notas[1], notas[2], notas[3])
+                        except Exception as e:
+                            print(f"Error procesando registro {notas}: {e}")
 
     except Exception as e:
         print("Error en la conexión o consulta SQL")
         print(f"Error: {e}")
-
-    finally:
-        # Cerrar la conexión
-        if 'cursor' in locals():
-            cursor.close()
-        if 'conexion' in locals():
-            conexion.close()
                 
     
 
@@ -227,28 +199,6 @@ def llamar_his_mp(pmovimientoid, pactuacionid, pdomicilioelectronicopj, CODIGO_S
         )
     except requests.exceptions.RequestException as e:
         print(f"❌ Error en la solicitud: {e}")
-
-
-
-def completar_archivo(CODIGO_SEGUIMIENTO,archivocontenido):            
-    conexion = psycopg2.connect(**pgsql_config)
-    cursor = conexion.cursor()
-    #print(f"update enviocedulanotificacionpolicia set ecedarchivoseguimientoid = {archivoid},ecedarchivoseguimientonombre = '{archivonombre}' ,ecedarchivosegnotid = {estadonotificacionid}        where codigoseguimientomp = '{CODIGO_SEGUIMIENTO}'")
-    insert_query = f"update enviocedulanotificacionpolicia set ecedarchivoseguimientodatos = '{archivocontenido}'    where codigoseguimientomp = '{CODIGO_SEGUIMIENTO}'"
-    #print(insert_query)
-    cursor.execute(insert_query)
-    conexion.commit()
-
-
-def completar_envio(archivoid,archivonombre,CODIGO_SEGUIMIENTO,estadonotificacionid):            
-    conexion = psycopg2.connect(**pgsql_config)
-    cursor = conexion.cursor()
-    #print(f"update enviocedulanotificacionpolicia set ecedarchivoseguimientoid = {archivoid},ecedarchivoseguimientonombre = '{archivonombre}' ,ecedarchivosegnotid = {estadonotificacionid}        where codigoseguimientomp = '{CODIGO_SEGUIMIENTO}'")
-    insert_query = f"update enviocedulanotificacionpolicia set ecedarchivoseguimientoid = {archivoid},ecedarchivoseguimientonombre = '{archivonombre}' ,ecedarchivosegnotid = {estadonotificacionid}        where codigoseguimientomp = '{CODIGO_SEGUIMIENTO}'"
-    cursor.execute(insert_query)
-    conexion.commit()
-
-
 
 def _formatear_fecha_estado(fecha_estado: Optional[Union[str, datetime]]) -> str:
     """Devuelve una representación legible de la fecha del estado."""
@@ -286,45 +236,51 @@ def _formatear_fecha_estado(fecha_estado: Optional[Union[str, datetime]]) -> str
     return "Sin fecha"
 
 
-def grabar_historico(estado, fecha_estado, pmovimientoid, pactuacionid, pdomicilioelectronicopj, CODIGO_SEGUIMIENTO):
+def grabar_historico(
+    estado,
+    fecha_estado,
+    pmovimientoid,
+    pactuacionid,
+    pdomicilioelectronicopj,
+    CODIGO_SEGUIMIENTO,
+):
     try:
-        conexion = psycopg2.connect(**pgsql_config)
-        cursor = conexion.cursor()
+        with psycopg2.connect(**pgsql_config) as conexion:
+            with conexion.cursor() as cursor:
+                estado_texto = estado or ""
+                fecha_estado_texto = _formatear_fecha_estado(fecha_estado)
+                print(
+                    f"{CODIGO_SEGUIMIENTO} -> Estado: {estado_texto} | Fecha: {fecha_estado_texto}"
+                )
 
-        estado_texto = estado or ''
-        fecha_estado_texto = _formatear_fecha_estado(fecha_estado)
-        print(
-            f"{CODIGO_SEGUIMIENTO} -> Estado: {estado_texto} | Fecha: {fecha_estado_texto}"
-        )
+                if estado_texto.upper() in (
+                    "ENTREGADA",
+                    "NO ENTREGADA",
+                    "DESCARTADA",
+                    "FINALIZADA",
+                ):
+                    finsian = True
+                    print(f"{CODIGO_SEGUIMIENTO} -> Finalizada")
+                else:
+                    finsian = False
 
-        if estado_texto.upper() in ('ENTREGADA','NO ENTREGADA','DESCARTADA','FINALIZADA'):
-            finsian = True
-            print(f"{CODIGO_SEGUIMIENTO} -> Finalizada")
-        else:
-            finsian = False
+                update_query = """
+                    UPDATE enviocedulanotificacionpolicia
+                    SET laststagesian = %s,
+                        fechalaststate = %s,
+                        finsian = %s
+                    WHERE codigoseguimientomp = %s
+                """
+                cursor.execute(
+                    update_query,
+                    (estado_texto, fecha_estado, finsian, CODIGO_SEGUIMIENTO),
+                )
+                conexion.commit()
 
-        update_query = """
-            UPDATE enviocedulanotificacionpolicia
-            SET laststagesian = %s,
-                fechalaststate = %s,
-                finsian = %s
-            WHERE codigoseguimientomp = %s
-        """
-        cursor.execute(update_query, (estado_texto, fecha_estado, finsian, CODIGO_SEGUIMIENTO))
-        conexion.commit()
-
-
-    
     except psycopg2.Error as e:
-        print(f"Error al insertar en la base de datos: {e} - {valores}")
-    
-    finally:
-        if cursor:
-            cursor.close()
-        if conexion:
-            conexion.close()
+        print(f"Error al insertar en la base de datos: {e}")
+
 if __name__ == "__main__":
-    connpanel = psycopg2.connect(**panel_config)
     pre_historial()
     #ejecutar_control_cedulas()
     #ejecutar_control_historial()
