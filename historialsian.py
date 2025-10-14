@@ -340,7 +340,7 @@ def _guardar_historial_notpol(
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (notpolhistoricompestadonid) DO NOTHING;"""
 
     try:
-        with psycopg2.connect(**panel_config) as conexion:
+        with psycopg2.connect(**pgsql_config) as conexion:
             with conexion.cursor() as cursor:
                 for estado in estados:
                     valores = (
