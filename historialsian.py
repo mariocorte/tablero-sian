@@ -178,7 +178,11 @@ def pre_historial():
         cursor.execute(update_query)
         conexion.commit()
 
-        update_query = f"update enviocedulanotificacionpolicia set descartada= false, laststagesian = 'Sin info', laststagesianfecha = null where penviocedulanotificacionfechahora >= current_date - INTERVAL '1 days' and coalesce(descartada,false) = false"
+        update_query = (
+            "update enviocedulanotificacionpolicia set descartada= false, laststagesian = 'Sin info', "
+            "fechalaststate = null where penviocedulanotificacionfechahora >= current_date - INTERVAL '1 days' "
+            "and coalesce(descartada,false) = false"
+        )
         cursor.execute(update_query)
         conexion.commit()
         cursor.execute("""
@@ -283,7 +287,7 @@ def grabar_historico(estado, fecha_estado, pmovimientoid, pactuacionid, pdomicil
         update_query = """
             UPDATE enviocedulanotificacionpolicia
             SET laststagesian = %s,
-                laststagesianfecha = %s,
+                fechalaststate = %s,
                 finsian = %s
             WHERE codigoseguimientomp = %s
         """
