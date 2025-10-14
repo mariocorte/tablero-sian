@@ -106,7 +106,9 @@ def lasstage(pmovimientoid, pactuacionid, pdomicilioelectronicopj, CODIGO_SEGUIM
                 ".//temp:HistorialEstados/temp:EstadoNotificacion", namespaces
             )
 
-            for estado_node in reversed(estados):
+            last_index = len(estados) - 1
+
+            for index, estado_node in enumerate(estados):
                 estado_text = None
                 fecha_estado = None
 
@@ -118,11 +120,15 @@ def lasstage(pmovimientoid, pactuacionid, pdomicilioelectronicopj, CODIGO_SEGUIM
                 if fecha_element is not None:
                     fecha_estado = fecha_element.text
 
-                if estado_text:
+                if not estado_text:
+                    continue
+
+                if index == last_index:
                     print(
                         f"******Tag: {{http://tempuri.org/}}Estado, Atributos: {estado_element.attrib if estado_element is not None else {}}, valor: {estado_text}"
                     )
                     return estado_text, fecha_estado
+                # registrarnotpolhst(estado_text, fecha_estado)
             return None, None
 
         else:
