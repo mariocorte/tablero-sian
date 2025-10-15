@@ -56,7 +56,13 @@ else:
         "password": "A8d%4pXq"
     }
 
-def lasstage(pmovimientoid, pactuacionid, pdomicilioelectronicopj, CODIGO_SEGUIMIENTO):
+def lasstage(
+    pmovimientoid,
+    pactuacionid,
+    pdomicilioelectronicopj,
+    CODIGO_SEGUIMIENTO,
+    fecha_ultima_estado=None,
+):
     # Configuración del WebService
     _log_step(
         "lasstage",
@@ -122,16 +128,28 @@ def lasstage(pmovimientoid, pactuacionid, pdomicilioelectronicopj, CODIGO_SEGUIM
 
             estados_normalizados = _normalizar_estados(estados, namespaces)
 
-            if estados_normalizados:
+            estados_filtrados = _filtrar_estados_nuevos(
+                estados_normalizados, fecha_ultima_estado
+            )
+
+            if not estados_filtrados:
+                _log_step(
+                    "lasstage",
+                    "OK",
+                    "Sin estados nuevos para registrar",
+                )
+                return None, None
+
+            if estados_filtrados:
                 _guardar_historial_notpol(
-                    estados_normalizados,
+                    estados_filtrados,
                     pmovimientoid,
                     pactuacionid,
                     pdomicilioelectronicopj,
                     CODIGO_SEGUIMIENTO,
                 )
 
-                ultimo_estado = estados_normalizados[-1]
+                ultimo_estado = estados_filtrados[-1]
                 print(
                     "******Tag: {tag}, Atributos: {attrs}, valor: {valor}".format(
                         tag="{http://tempuri.org/}Estado",
@@ -187,24 +205,21 @@ def pre_historial():
                 conexion.commit()
 
                 consultas = [
-                    ("AND  e.pdac_codigo = 'CEDURG'", "15 days"),
-                    ("AND  e.pdac_codigo <> 'CEDURG'", "5 days"),
+                    "AND  e.pdac_codigo = 'CEDURG'",
+                    "AND  e.pdac_codigo <> 'CEDURG'",
                 ]
 
                 base_query = (
-                    "SELECT e.pmovimientoid, e.pactuacionid, e.pdomicilioelectronicopj, e.codigoseguimientomp "
+                    "SELECT e.pmovimientoid, e.pactuacionid, e.pdomicilioelectronicopj, "
+                    "e.codigoseguimientomp, e.fechalaststate "
                     "FROM enviocedulanotificacionpolicia e "
                     "WHERE e.codigoseguimientomp IS NOT NULL "
                     "AND upper(trim(e.codigoseguimientomp)) <> 'NONE' "
-                    "AND e.finsian = false "
-                    "{extra_condition} "
-                    "AND e.penviocedulanotificacionfechahora >= current_date - INTERVAL %s"
+                    "{extra_condition}"
                 )
 
-                for condicion_extra, intervalo in consultas:
-                    cursor.execute(
-                        base_query.format(extra_condition=condicion_extra), (intervalo,)
-                    )
+                for condicion_extra in consultas:
+                    cursor.execute(base_query.format(extra_condition=condicion_extra))
                     for notas in cursor:
                         try:
                             _log_step(
@@ -212,7 +227,13 @@ def pre_historial():
                                 "INICIO",
                                 f"Procesando registro {notas}",
                             )
-                            llamar_his_mp(notas[0], notas[1], notas[2], notas[3])
+                            llamar_his_mp(
+                                notas[0],
+                                notas[1],
+                                notas[2],
+                                notas[3],
+                                notas[4],
+                            )
                             _log_step(
                                 "pre_historial",
                                 "OK",
@@ -235,7 +256,13 @@ def pre_historial():
                 
     
 
-def llamar_his_mp(pmovimientoid, pactuacionid, pdomicilioelectronicopj, CODIGO_SEGUIMIENTO):
+def llamar_his_mp(
+    pmovimientoid,
+    pactuacionid,
+    pdomicilioelectronicopj,
+    CODIGO_SEGUIMIENTO,
+    fecha_ultima_estado,
+):
     _log_step(
         "llamar_his_mp",
         "INICIO",
@@ -243,8 +270,20 @@ def llamar_his_mp(pmovimientoid, pactuacionid, pdomicilioelectronicopj, CODIGO_S
     )
     try:
         estado, fecha_estado = lasstage(
-            pmovimientoid, pactuacionid, pdomicilioelectronicopj, CODIGO_SEGUIMIENTO
+            pmovimientoid,
+            pactuacionid,
+            pdomicilioelectronicopj,
+            CODIGO_SEGUIMIENTO,
+            fecha_ultima_estado,
         )
+
+        if estado is None and fecha_estado is None:
+            _log_step(
+                "llamar_his_mp",
+                "OK",
+                f"Sin estados nuevos para {CODIGO_SEGUIMIENTO}",
+            )
+            return
         exito_guardado = grabar_historico(
             estado,
             fecha_estado,
@@ -411,6 +450,35 @@ def _normalizar_estados(
         f"Total estados normalizados: {len(estados_normalizados)}",
     )
     return estados_normalizados
+
+
+def _normalizar_fecha_para_comparacion(fecha: Optional[datetime]) -> Optional[datetime]:
+    if fecha is None:
+        return None
+    if fecha.tzinfo is not None:
+        return fecha.replace(tzinfo=None)
+    return fecha
+
+
+def _filtrar_estados_nuevos(
+    estados: Iterable[Dict[str, Any]],
+    fecha_ultima_estado: Optional[datetime],
+) -> List[Dict[str, Any]]:
+    fecha_ultima_normalizada = _normalizar_fecha_para_comparacion(fecha_ultima_estado)
+    estados_filtrados: List[Dict[str, Any]] = []
+
+    for estado in estados:
+        fecha_estado = estado.get("fecha")
+        fecha_estado_normalizada = _normalizar_fecha_para_comparacion(fecha_estado)
+
+        if (
+            fecha_ultima_normalizada is None
+            or fecha_estado_normalizada is None
+            or fecha_estado_normalizada >= fecha_ultima_normalizada
+        ):
+            estados_filtrados.append(estado)
+
+    return estados_filtrados
 
 
 def _guardar_historial_notpol(
