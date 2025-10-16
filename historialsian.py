@@ -1,5 +1,5 @@
 import psycopg2
-from datetime import datetime
+from datetime import datetime, date
 import requests
 import xml.etree.ElementTree as ET
 from typing import Optional, Union, Iterable, Dict, Any, List
@@ -452,11 +452,18 @@ def _normalizar_estados(
     return estados_normalizados
 
 
-def _normalizar_fecha_para_comparacion(fecha: Optional[datetime]) -> Optional[datetime]:
+def _normalizar_fecha_para_comparacion(
+    fecha: Optional[Union[datetime, date]]
+) -> Optional[datetime]:
     if fecha is None:
         return None
+
+    if isinstance(fecha, date) and not isinstance(fecha, datetime):
+        fecha = datetime.combine(fecha, datetime.min.time())
+
     if fecha.tzinfo is not None:
         return fecha.replace(tzinfo=None)
+
     return fecha
 
 
