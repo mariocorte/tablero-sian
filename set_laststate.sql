@@ -10,7 +10,7 @@ WITH datos AS (
         e.pactuacionid,
         e.pdomicilioelectronicopj,
         ultimo.notpolhistoricompestado,
-        ultimo.notpolhistoricompfecha
+        ultimo.notpolhistoricompfecha::date AS notpolhistoricompfecha
     FROM public.enviocedulanotificacionpolicia AS e
     CROSS JOIN LATERAL public.obtener_ultimo_estado(
         e.pmovimientoid,
@@ -21,7 +21,7 @@ WITH datos AS (
 )
 UPDATE public.enviocedulanotificacionpolicia AS e
 SET laststagesian = datos.notpolhistoricompestado,
-    laststate = datos.notpolhistoricompfecha
+    fechalaststate = datos.notpolhistoricompfecha
 FROM datos
 WHERE e.pmovimientoid = datos.pmovimientoid
   AND e.pactuacionid = datos.pactuacionid
