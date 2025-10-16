@@ -4,18 +4,26 @@ CREATE INDEX IF NOT EXISTS idx_envio_notif_pol_fechalaststate_null
     ON public.enviocedulanotificacionpolicia (pmovimientoid, pactuacionid, pdomicilioelectronicopj)
     WHERE fechalaststate IS NULL;
 
--- Actualiza los campos laststagesian y laststate con la información devuelta
--- por la función obtener_ultimo_estado para los registros que aún no poseen
--- fecha de último estado.
-UPDATE public.enviocedulanotificacionpolicia AS e
-SET laststagesian = ultimo.notpolhistoricompestado,
-    laststate = ultimo.notpolhistoricompfecha
-FROM LATERAL (
-    SELECT u.notpolhistoricompfecha, u.notpolhistoricompestado
-    FROM public.obtener_ultimo_estado(
+WITH datos AS (
+    SELECT
+        e.pmovimientoid,
+        e.pactuacionid,
+        e.pdomicilioelectronicopj,
+        ultimo.notpolhistoricompestado,
+        ultimo.notpolhistoricompfecha
+    FROM public.enviocedulanotificacionpolicia AS e
+    CROSS JOIN LATERAL public.obtener_ultimo_estado(
         e.pmovimientoid,
         e.pactuacionid,
         e.pdomicilioelectronicopj
-    ) AS u
-) AS ultimo
-WHERE e.fechalaststate IS NULL;
+    ) AS ultimo
+    WHERE e.fechalaststate IS NULL
+)
+UPDATE public.enviocedulanotificacionpolicia AS e
+SET laststagesian = datos.notpolhistoricompestado,
+    laststate = datos.notpolhistoricompfecha
+FROM datos
+WHERE e.pmovimientoid = datos.pmovimientoid
+  AND e.pactuacionid = datos.pactuacionid
+  AND e.pdomicilioelectronicopj = datos.pdomicilioelectronicopj
+  AND e.fechalaststate IS NULL;
