@@ -5,8 +5,8 @@ CREATE INDEX IF NOT EXISTS idx_notpolhistoricomp_mov_act_dom_fecha
 
 -- Función que devuelve la fecha y el estado más reciente para los parámetros indicados.
 CREATE OR REPLACE FUNCTION public.obtener_ultimo_estado(
-    p_pmovimientoid bigint,
-    p_pactuacionid bigint,
+    p_pmovimientoid double precision,
+    p_pactuacionid numeric,
     p_pdomicilioelectronicopj varchar
 )
 RETURNS TABLE (
