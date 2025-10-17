@@ -507,10 +507,25 @@ def _normalizar_estados(
 
 
 def _normalizar_fecha_para_comparacion(
-    fecha: Optional[Union[datetime, date]]
+    fecha: Optional[Union[datetime, date, str]]
 ) -> Optional[datetime]:
     if fecha is None:
         return None
+
+    if isinstance(fecha, str):
+        fecha_texto = fecha.strip()
+        if not fecha_texto:
+            return None
+
+        fecha_parseada = _parsear_fecha_estado_bd(fecha_texto)
+        if fecha_parseada is None:
+            try:
+                fecha_parseada = datetime.fromisoformat(
+                    fecha_texto.replace("Z", "+00:00")
+                )
+            except ValueError:
+                return None
+        fecha = fecha_parseada
 
     if isinstance(fecha, date) and not isinstance(fecha, datetime):
         fecha = datetime.combine(fecha, datetime.min.time())
