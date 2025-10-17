@@ -75,7 +75,12 @@ def _obtener_envios(
     fecha_inicio, fecha_fin = _validar_periodo(periodo)
     consulta = """
         SELECT
-            idenviocedulanotificacionpolicia AS id_envio,
+            ROW_NUMBER() OVER (
+                ORDER BY penviocedulanotificacionfechahora,
+                         pmovimientoid,
+                         pactuacionid,
+                         pdomicilioelectronicopj
+            ) AS id_envio,
             pmovimientoid,
             pactuacionid,
             pdomicilioelectronicopj,
@@ -87,7 +92,9 @@ def _obtener_envios(
           AND penviocedulanotificacionfechahora >= %s
           AND penviocedulanotificacionfechahora < %s
         ORDER BY penviocedulanotificacionfechahora,
-                 idenviocedulanotificacionpolicia
+                 pmovimientoid,
+                 pactuacionid,
+                 pdomicilioelectronicopj
     """
 
     with conn_pg.cursor(cursor_factory=extras.DictCursor) as cursor:
