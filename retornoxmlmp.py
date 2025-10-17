@@ -312,6 +312,8 @@ def procesar_periodo(periodo: str, usar_test: Optional[bool] = None) -> None:
         f"Procesando período {periodo} (test={bandera_test})",
     )
 
+    resumen_acciones: List[Tuple[str, str]] = []
+
     with psycopg2.connect(**pgsql_config) as conn_pg, psycopg2.connect(**panel_config) as conn_panel:
         conn_pg.autocommit = False
         conn_panel.autocommit = False
@@ -339,6 +341,12 @@ def procesar_periodo(periodo: str, usar_test: Optional[bool] = None) -> None:
 
             resultado = _invocar_servicio(envio.codigoseguimientomp, bandera_test)
             if resultado is None:
+                _log_step(
+                    "procesar_periodo",
+                    "ERROR",
+                    f"Sin respuesta para {envio.codigoseguimientomp}",
+                )
+                resumen_acciones.append((envio.codigoseguimientomp, "error"))
                 continue
 
             accion = _almacenar_xml(conn_panel, envio, resultado.xml_respuesta)
@@ -361,7 +369,20 @@ def procesar_periodo(periodo: str, usar_test: Optional[bool] = None) -> None:
                     f"Sin cambios para {envio.codigoseguimientomp}",
                 )
 
-    _log_step("procesar_periodo", "FIN", "Proceso completado")
+            resumen_acciones.append((envio.codigoseguimientomp, accion))
+
+    if resumen_acciones:
+        resumen = ", ".join(
+            f"{codigo}: {accion}" for codigo, accion in resumen_acciones
+        )
+    else:
+        resumen = "sin acciones registradas"
+
+    _log_step(
+        "procesar_periodo",
+        "FIN",
+        f"Proceso completado (resumen: {resumen})",
+    )
 
 
 def _parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
