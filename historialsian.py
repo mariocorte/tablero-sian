@@ -1,8 +1,7 @@
 import psycopg2
 from datetime import datetime, date
-import requests
 import xml.etree.ElementTree as ET
-from typing import Optional, Union, Iterable, Dict, Any, List
+from typing import Optional, Union, Iterable, Dict, Any, List, Tuple
 
 
 def _log_step(func_name: str, status: str, message: str = "") -> None:
@@ -62,135 +61,86 @@ def lasstage(
     pdomicilioelectronicopj,
     CODIGO_SEGUIMIENTO,
     fecha_ultima_estado=None,
-):
-    # Configuración del WebService
+    xml_respuesta: Optional[str] = None,
+) -> Tuple[Optional[Dict[str, Any]], int, int]:
+    # Obtiene los estados desde el XML almacenado en retornomp.
     _log_step(
         "lasstage",
         "INICIO",
         f"Procesando seguimiento {CODIGO_SEGUIMIENTO} (mov: {pmovimientoid}, act: {pactuacionid})",
     )
-    if test:
-        HOST_WS_SIAN = "https://pruebasian.mpublico.gov.ar"  # Reemplaza con la URL real
-    else:
-        HOST_WS_SIAN = "https://sian.mpublico.gov.ar"
-    BASE_URL = "/services/wsNotificacion.asmx"
-    URL = f"{HOST_WS_SIAN}{BASE_URL}"
 
-    # Credenciales
-    USUARIO_CLAVE = "NES7u'FR>]e:3)D"
-    USUARIO_NOMBRE = "wsPoderJudicial"
-
-    # Código de seguimiento
-    # CODIGO_SEGUIMIENTO = "C0D7BA"  # Ejemplo, reemplaza con el real
-
-    # XML de la petición
-    xml_data = f"""<?xml version="1.0" encoding="UTF-8"?>
-    <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tem="http://tempuri.org/">
-        <soapenv:Header>
-            <tem:Authentication>
-                <tem:UsuarioClave>{USUARIO_CLAVE}</tem:UsuarioClave>
-                <tem:UsuarioNombre>{USUARIO_NOMBRE}</tem:UsuarioNombre>
-            </tem:Authentication>
-        </soapenv:Header>
-        <soapenv:Body>
-            <tem:ObtenerEstadoNotificacion>
-                <tem:codigoSeguimiento>{CODIGO_SEGUIMIENTO}</tem:codigoSeguimiento>
-            </tem:ObtenerEstadoNotificacion>
-        </soapenv:Body>
-    </soapenv:Envelope>"""
-
-    # print(xml_data)
-
-    # Encabezados HTTP
-    headers = {
-        "Content-Type": "text/xml; charset=UTF-8",
-        "SOAPAction": "http://tempuri.org/ObtenerEstadoNotificacion",  # A veces es obligatorio
-    }
+    if not xml_respuesta:
+        _log_step("lasstage", "ADVERTENCIA", "XML vacío o inexistente")
+        return None, 0, 0
 
     try:
-        # Realizar la petición
-        response = requests.post(URL, data=xml_data, headers=headers, verify=False)  # verify=False si el certificado no es válido
+        root = ET.fromstring(xml_respuesta)
+    except ET.ParseError as exc:
+        _log_step("lasstage", "ERROR", f"XML inválido: {exc}")
+        return None, 0, 0
 
-        # Verificar respuesta
-        if response.status_code == 200:
-            # print("✅ Respuesta recibida con éxito")
-            # print(response.text)  # Mostrar XML de respuesta
-            root = ET.fromstring(response.text)
+    namespaces = {
+        "soap": "http://schemas.xmlsoap.org/soap/envelope/",
+        "temp": "http://tempuri.org/",
+    }
 
-            namespaces = {
-                "soap": "http://schemas.xmlsoap.org/soap/envelope/",
-                "temp": "http://tempuri.org/",
-            }
+    estados = root.findall(
+        ".//temp:HistorialEstados/temp:EstadoNotificacion", namespaces
+    )
 
-            estados = root.findall(
-                ".//temp:HistorialEstados/temp:EstadoNotificacion", namespaces
-            )
+    estados_normalizados = _normalizar_estados(estados, namespaces)
 
-            estados_normalizados = _normalizar_estados(estados, namespaces)
+    estados_filtrados = _filtrar_estados_nuevos(
+        estados_normalizados, fecha_ultima_estado
+    )
 
-            estados_filtrados = _filtrar_estados_nuevos(
-                estados_normalizados, fecha_ultima_estado
-            )
+    if not estados_filtrados:
+        _log_step(
+            "lasstage",
+            "OK",
+            "Sin estados nuevos para registrar",
+        )
+        return None, 0, 0
 
-            if not estados_filtrados:
-                _log_step(
-                    "lasstage",
-                    "OK",
-                    "Sin estados nuevos para registrar",
-                )
-                return None, None
+    insertados = _guardar_historial_notpol(
+        estados_filtrados,
+        pmovimientoid,
+        pactuacionid,
+        pdomicilioelectronicopj,
+        CODIGO_SEGUIMIENTO,
+    )
 
-            if estados_filtrados:
-                _guardar_historial_notpol(
-                    estados_filtrados,
-                    pmovimientoid,
-                    pactuacionid,
-                    pdomicilioelectronicopj,
-                    CODIGO_SEGUIMIENTO,
-                )
-
-                ultimo_estado = estados_filtrados[-1]
-                print(
-                    "******Tag: {tag}, Atributos: {attrs}, valor: {valor}".format(
-                        tag="{http://tempuri.org/}Estado",
-                        attrs={},
-                        valor=ultimo_estado.get("estado") or "",
-                    )
-                )
-                _log_step(
-                    "lasstage",
-                    "OK",
-                    f"Estados obtenidos correctamente para {CODIGO_SEGUIMIENTO}",
-                )
-                return ultimo_estado.get("estado"), ultimo_estado.get("fecha_raw")
-            _log_step("lasstage", "OK", "Sin estados disponibles en la respuesta")
-            return None, None
-
-        else:
-            _log_step(
-                "lasstage",
-                "ERROR",
-                f"Código de estado HTTP {response.status_code}. Respuesta: {response.text}",
-            )
-
-    except requests.exceptions.RequestException as e:
-        _log_step("lasstage", "ERROR", f"Error en la solicitud: {e}")
-
-    return None, None
+    ultimo_estado = estados_filtrados[-1]
+    print(
+        "******Tag: {tag}, Atributos: {attrs}, valor: {valor}".format(
+            tag="{http://tempuri.org/}Estado",
+            attrs={},
+            valor=ultimo_estado.get("estado") or "",
+        )
+    )
+    _log_step(
+        "lasstage",
+        "OK",
+        f"Estados obtenidos correctamente para {CODIGO_SEGUIMIENTO}",
+    )
+    return ultimo_estado, len(estados_filtrados), insertados
 
 
 def pre_historial():
     _log_step("pre_historial", "INICIO", "Preparando actualización de registros")
     try:
-        with psycopg2.connect(**pgsql_config) as conexion:
-            with conexion.cursor() as cursor:
-                cursor.execute(
+        with psycopg2.connect(**pgsql_config) as conexion_pg, psycopg2.connect(
+            **panel_config
+        ) as conexion_panel:
+            with conexion_pg.cursor() as cursor_pg:
+                cursor_pg.execute(
                     "update enviocedulanotificacionpolicia set finsian = True "
                     "where descartada = True and finsian <> True"
                 )
                 _log_step("pre_historial", "OK", "Registros descartados marcados como finalizados")
 
-                cursor.execute(
+                cursor_pg.execute(
                     "update enviocedulanotificacionpolicia set descartada= false, "
                     "laststagesian = 'Sin info', fechalaststate = null "
                     "where penviocedulanotificacionfechahora >= current_date - INTERVAL '1 days' "
@@ -202,59 +152,98 @@ def pre_historial():
                     "Registros reiniciados para seguimiento reciente",
                 )
 
-                conexion.commit()
+            conexion_pg.commit()
 
-                consultas = [
-                    "AND  e.pdac_codigo = 'CEDURG'",
-                    "AND  e.pdac_codigo <> 'CEDURG'",
-                ]
-
-                base_query = (
-                    "SELECT e.pmovimientoid, e.pactuacionid, e.pdomicilioelectronicopj, "
-                    "e.codigoseguimientomp, e.fechalaststate "
-                    "FROM enviocedulanotificacionpolicia e "
-                    "WHERE e.codigoseguimientomp IS NOT NULL "
-                    "AND upper(trim(e.codigoseguimientomp)) <> 'NONE' "
-                    "{extra_condition}"
+            with conexion_panel.cursor() as cursor_panel:
+                cursor_panel.execute(
+                    """
+                    SELECT
+                        pmovimientoid,
+                        pactuacionid,
+                        pdomicilioelectronicopj,
+                        contenido_xml
+                    FROM retornomp
+                    WHERE COALESCE(procesado, FALSE) = FALSE
+                    ORDER BY ultactualizacion NULLS LAST, pmovimientoid, pactuacionid
+                    """
                 )
+                retornos = cursor_panel.fetchall()
 
-                for condicion_extra in consultas:
-                    cursor.execute(base_query.format(extra_condition=condicion_extra))
-                    for notas in cursor:
-                        try:
-                            _log_step(
-                                "pre_historial",
-                                "INICIO",
-                                f"Procesando registro {notas}",
-                            )
-                            llamar_his_mp(
-                                notas[0],
-                                notas[1],
-                                notas[2],
-                                notas[3],
-                                notas[4],
-                            )
-                            _log_step(
-                                "pre_historial",
-                                "OK",
-                                f"Registro {notas[3]} procesado correctamente",
-                            )
-                        except Exception as e:
-                            _log_step(
-                                "pre_historial",
-                                "ERROR",
-                                f"Error procesando registro {notas}: {e}",
-                            )
+            if not retornos:
+                _log_step(
+                    "pre_historial",
+                    "OK",
+                    "No hay retornos pendientes en retornomp",
+                )
+                return
 
-                _log_step("pre_historial", "OK", "Proceso de historial finalizado")
+            for retorno in retornos:
+                pmovimientoid, pactuacionid, pdomicilioelectronicopj, xml_contenido = retorno
+                try:
+                    _log_step(
+                        "pre_historial",
+                        "INICIO",
+                        f"Procesando retorno (mov={pmovimientoid}, act={pactuacionid})",
+                    )
+                    datos_envio = _obtener_datos_envio(
+                        conexion_pg,
+                        pmovimientoid,
+                        pactuacionid,
+                        pdomicilioelectronicopj,
+                    )
+
+                    if datos_envio is None:
+                        _log_step(
+                            "pre_historial",
+                            "ADVERTENCIA",
+                            "No se encontró el envío asociado en enviocedulanotificacionpolicia",
+                        )
+                        continue
+
+                    codigoseguimiento, fecha_ultima = datos_envio
+                    exito = llamar_his_mp(
+                        pmovimientoid,
+                        pactuacionid,
+                        pdomicilioelectronicopj,
+                        codigoseguimiento,
+                        fecha_ultima,
+                        xml_contenido,
+                    )
+
+                    if exito:
+                        _marcar_retornomp_procesado(
+                            conexion_panel,
+                            pmovimientoid,
+                            pactuacionid,
+                            pdomicilioelectronicopj,
+                        )
+                        _log_step(
+                            "pre_historial",
+                            "OK",
+                            f"Retorno {codigoseguimiento} procesado y marcado",
+                        )
+                    else:
+                        _log_step(
+                            "pre_historial",
+                            "ERROR",
+                            f"No se pudo procesar el retorno {codigoseguimiento}",
+                        )
+                except Exception as e:
+                    _log_step(
+                        "pre_historial",
+                        "ERROR",
+                        f"Error procesando retorno (mov={pmovimientoid}, act={pactuacionid}): {e}",
+                    )
+
+            _log_step("pre_historial", "OK", "Proceso de historial finalizado")
     except Exception as e:
         _log_step(
             "pre_historial",
             "ERROR",
             f"Error en la conexión o consulta SQL: {e}",
         )
-                
-    
+
+
 
 def llamar_his_mp(
     pmovimientoid,
@@ -262,28 +251,39 @@ def llamar_his_mp(
     pdomicilioelectronicopj,
     CODIGO_SEGUIMIENTO,
     fecha_ultima_estado,
-):
+    xml_contenido,
+) -> bool:
     _log_step(
         "llamar_his_mp",
         "INICIO",
         f"Obteniendo historial para {CODIGO_SEGUIMIENTO}",
     )
     try:
-        estado, fecha_estado = lasstage(
+        ultimo_estado, total_estados, insertados = lasstage(
             pmovimientoid,
             pactuacionid,
             pdomicilioelectronicopj,
             CODIGO_SEGUIMIENTO,
             fecha_ultima_estado,
+            xml_contenido,
         )
 
-        if estado is None and fecha_estado is None:
+        if ultimo_estado is None:
             _log_step(
                 "llamar_his_mp",
                 "OK",
                 f"Sin estados nuevos para {CODIGO_SEGUIMIENTO}",
             )
-            return
+            return True
+
+        estado = ultimo_estado.get("estado")
+        fecha_estado = ultimo_estado.get("fecha_raw")
+        _log_step(
+            "llamar_his_mp",
+            "OK",
+            f"Total estados analizados: {total_estados}, nuevos insertados: {insertados}",
+        )
+
         exito_guardado = grabar_historico(
             estado,
             fecha_estado,
@@ -292,10 +292,9 @@ def llamar_his_mp(
             pdomicilioelectronicopj,
             CODIGO_SEGUIMIENTO,
         )
-    except requests.exceptions.RequestException as e:
-        _log_step("llamar_his_mp", "ERROR", f"Error en la solicitud: {e}")
     except Exception as e:
-        _log_step("llamar_his_mp", "ERROR", f"Error inesperado: {e}")
+        _log_step("llamar_his_mp", "ERROR", f"Error procesando XML: {e}")
+        return False
     else:
         if exito_guardado:
             _log_step(
@@ -303,12 +302,67 @@ def llamar_his_mp(
                 "OK",
                 f"Historial actualizado para {CODIGO_SEGUIMIENTO}",
             )
-        else:
-            _log_step(
-                "llamar_his_mp",
-                "ERROR",
-                f"Historial no pudo actualizarse para {CODIGO_SEGUIMIENTO}",
-            )
+            return True
+        _log_step(
+            "llamar_his_mp",
+            "ERROR",
+            f"Historial no pudo actualizarse para {CODIGO_SEGUIMIENTO}",
+        )
+        return False
+
+
+
+def _obtener_datos_envio(
+    conexion_pg: psycopg2.extensions.connection,
+    pmovimientoid,
+    pactuacionid,
+    pdomicilioelectronicopj,
+) -> Optional[Tuple[str, Optional[datetime]]]:
+    consulta = """
+        SELECT codigoseguimientomp, fechalaststate
+        FROM enviocedulanotificacionpolicia
+        WHERE pmovimientoid = %s
+          AND pactuacionid = %s
+          AND pdomicilioelectronicopj = %s
+          AND codigoseguimientomp IS NOT NULL
+          AND TRIM(codigoseguimientomp) <> ''
+          AND UPPER(TRIM(codigoseguimientomp)) <> 'NONE'
+        LIMIT 1
+    """
+
+    with conexion_pg.cursor() as cursor:
+        cursor.execute(
+            consulta,
+            (pmovimientoid, pactuacionid, pdomicilioelectronicopj),
+        )
+        fila = cursor.fetchone()
+
+    if not fila:
+        return None
+    return fila[0], fila[1]
+
+
+def _marcar_retornomp_procesado(
+    conexion_panel: psycopg2.extensions.connection,
+    pmovimientoid,
+    pactuacionid,
+    pdomicilioelectronicopj,
+) -> None:
+    with conexion_panel.cursor() as cursor:
+        cursor.execute(
+            """
+            UPDATE retornomp
+            SET procesado = TRUE,
+                fechaproceso = NOW()
+            WHERE pmovimientoid = %s
+              AND pactuacionid = %s
+              AND pdomicilioelectronicopj = %s
+            """,
+            (pmovimientoid, pactuacionid, pdomicilioelectronicopj),
+        )
+    conexion_panel.commit()
+
+
 
 def _formatear_fecha_estado(fecha_estado: Optional[Union[str, datetime]]) -> str:
     """Devuelve una representación legible de la fecha del estado."""
@@ -488,20 +542,61 @@ def _filtrar_estados_nuevos(
     return estados_filtrados
 
 
+def _construir_clave_estado(
+    estado_id: Optional[int],
+    fecha: Optional[Union[datetime, date]],
+    estado_texto: Optional[str],
+) -> Tuple[Optional[int], Optional[datetime], str]:
+    estado_norm = int(estado_id) if estado_id is not None else None
+    fecha_norm = _normalizar_fecha_para_comparacion(fecha)
+    texto_norm = (estado_texto or '').strip().upper()
+    return estado_norm, fecha_norm, texto_norm
+
+
+def _obtener_claves_estados_existentes(
+    cursor: psycopg2.extensions.cursor,
+    pmovimientoid,
+    pactuacionid,
+    pdomicilioelectronicopj,
+    CODIGO_SEGUIMIENTO,
+) -> set:
+    consulta = """
+        SELECT notpolhistoricompestadonid,
+               notpolhistoricompfecha,
+               notpolhistoricompestado
+        FROM notpolhistoricomp
+        WHERE pmovimientoid = %s
+          AND pactuacionid = %s
+          AND pdomicilioelectronicopj = %s
+          AND codigoseguimientomp = %s
+    """
+    cursor.execute(
+        consulta,
+        (pmovimientoid, pactuacionid, pdomicilioelectronicopj, CODIGO_SEGUIMIENTO),
+    )
+    existentes = set()
+    for estado_id, fecha, estado_texto in cursor.fetchall():
+        existentes.add(_construir_clave_estado(estado_id, fecha, estado_texto))
+    return existentes
+
+
 def _guardar_historial_notpol(
     estados: Iterable[Dict[str, Any]],
     pmovimientoid,
     pactuacionid,
     pdomicilioelectronicopj,
     CODIGO_SEGUIMIENTO,
-):
+) -> int:
+    if not isinstance(estados, list):
+        estados = list(estados)
+
     if not estados:
         _log_step(
             "_guardar_historial_notpol",
             "OK",
             f"Sin estados para registrar en {CODIGO_SEGUIMIENTO}",
         )
-        return
+        return 0
 
     insert_query = """INSERT INTO notpolhistoricomp \
         (notpolhistoricomparchivoid, notpolhistoricomparchivonombre, notpolhistoricompestadonid, \
@@ -509,49 +604,76 @@ def _guardar_historial_notpol(
         notpolhistoricompobservaciones, notpolhistoricompmotivo, notpolhistoricompresponsable, \
         notpolhistoricompdependencia, pmovimientoid, pactuacionid, pdomicilioelectronicopj, \
         codigoseguimientomp) \
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (notpolhistoricompestadonid) DO NOTHING;"""
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);"""
 
     try:
         with psycopg2.connect(**pgsql_config) as conexion:
             with conexion.cursor() as cursor:
-                if not isinstance(estados, list):
-                    estados = list(estados)
                 total_estados = len(estados)
                 _log_step(
                     "_guardar_historial_notpol",
                     "INICIO",
                     f"Preparando inserción de {total_estados} estados para {CODIGO_SEGUIMIENTO}",
                 )
+
+                claves_existentes = _obtener_claves_estados_existentes(
+                    cursor,
+                    pmovimientoid,
+                    pactuacionid,
+                    pdomicilioelectronicopj,
+                    CODIGO_SEGUIMIENTO,
+                )
+
+                insertados = 0
                 for estado in estados:
+                    clave = _construir_clave_estado(
+                        estado.get('estado_id'),
+                        estado.get('fecha'),
+                        estado.get('estado'),
+                    )
+                    if clave in claves_existentes:
+                        _log_step(
+                            "_guardar_historial_notpol",
+                            "OK",
+                            f"Estado duplicado omitido en {CODIGO_SEGUIMIENTO}: {clave}",
+                        )
+                        continue
+
                     valores = (
-                        estado.get("archivo_id"),
-                        estado.get("archivo_nombre"),
-                        estado.get("estado_id"),
+                        estado.get('archivo_id'),
+                        estado.get('archivo_nombre'),
+                        estado.get('estado_id'),
                         None,
-                        estado.get("fecha"),
-                        estado.get("estado"),
-                        estado.get("observaciones"),
-                        estado.get("motivo"),
-                        estado.get("responsable"),
-                        estado.get("dependencia"),
+                        estado.get('fecha'),
+                        estado.get('estado'),
+                        estado.get('observaciones'),
+                        estado.get('motivo'),
+                        estado.get('responsable'),
+                        estado.get('dependencia'),
                         pmovimientoid,
                         pactuacionid,
                         pdomicilioelectronicopj,
                         CODIGO_SEGUIMIENTO,
                     )
                     cursor.execute(insert_query, valores)
+                    if cursor.rowcount:
+                        insertados += 1
+                        claves_existentes.add(clave)
             conexion.commit()
             _log_step(
                 "_guardar_historial_notpol",
                 "OK",
-                f"Historial guardado para {CODIGO_SEGUIMIENTO}",
+                f"Historial guardado para {CODIGO_SEGUIMIENTO}. Nuevos registros: {insertados}",
             )
+            return insertados
     except psycopg2.Error as e:
         _log_step(
             "_guardar_historial_notpol",
             "ERROR",
             f"Error al insertar historial notificación en panel: {e}",
         )
+        return 0
+
 
 
 def _parsear_fecha_estado_bd(fecha_estado: Optional[str]) -> Optional[datetime]:
