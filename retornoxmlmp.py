@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Iterable, List, Optional, Tuple
 
 import psycopg2
@@ -51,28 +51,92 @@ class ResultadoSOAP:
     xml_respuesta: str
 
 
-def _validar_periodo(periodo: str) -> Tuple[datetime, datetime]:
-    """Convierte un período ``YYYYMM`` en el rango datetime correspondiente."""
+@dataclass(frozen=True)
+class IteracionConsulta:
+    """Agrupa los parámetros para una iteración de consulta."""
 
-    if len(periodo) != 6 or not periodo.isdigit():
-        raise ValueError("El período debe tener el formato YYYYMM")
+    descripcion: str
+    estados: Tuple[str, ...]
+    min_dias: Optional[int] = None
+    max_dias: Optional[int] = None
 
-    inicio = datetime.strptime(periodo, "%Y%m")
-    # Calcula el inicio del mes siguiente para utilizarlo como cota superior.
-    if inicio.month == 12:
-        fin = datetime(inicio.year + 1, 1, 1)
-    else:
-        fin = datetime(inicio.year, inicio.month + 1, 1)
-    return inicio, fin
+
+ITERACIONES: Tuple[IteracionConsulta, ...] = (
+    IteracionConsulta(
+        descripcion="Pendiente/Ingresada, fechalaststate <= 10 días",
+        estados=("Pendiente", "Ingresada"),
+        max_dias=10,
+    ),
+    IteracionConsulta(
+        descripcion="En Dep. Policial/Enviada, fechalaststate <= 10 días",
+        estados=("En Dep. Policial", "Enviada"),
+        max_dias=10,
+    ),
+    IteracionConsulta(
+        descripcion="En Notificaciones/Entregada/No entregada, fechalaststate <= 10 días",
+        estados=("En Notificaciones", "Entregada", "No entregada"),
+        max_dias=10,
+    ),
+    IteracionConsulta(
+        descripcion="Rectificación entregada/Rectificación No Entregada, fechalaststate <= 10 días",
+        estados=("Rectificación entregada", "Rectificación No Entregada"),
+        max_dias=10,
+    ),
+    IteracionConsulta(
+        descripcion="Pendiente/Ingresada, 10 < fechalaststate <= 20 días",
+        estados=("Pendiente", "Ingresada"),
+        min_dias=10,
+        max_dias=20,
+    ),
+    IteracionConsulta(
+        descripcion="En Dep. Policial/Enviada, 10 < fechalaststate <= 20 días",
+        estados=("En Dep. Policial", "Enviada"),
+        min_dias=10,
+        max_dias=20,
+    ),
+    IteracionConsulta(
+        descripcion="En Notificaciones/Entregada/No entregada, 10 < fechalaststate <= 20 días",
+        estados=("En Notificaciones", "Entregada", "No entregada"),
+        min_dias=10,
+        max_dias=20,
+    ),
+    IteracionConsulta(
+        descripcion="Rectificación entregada/Rectificación No Entregada, 10 < fechalaststate <= 20 días",
+        estados=("Rectificación entregada", "Rectificación No Entregada"),
+        min_dias=10,
+        max_dias=20,
+    ),
+    IteracionConsulta(
+        descripcion="Pendiente/Ingresada, fechalaststate > 20 días",
+        estados=("Pendiente", "Ingresada"),
+        min_dias=20,
+    ),
+    IteracionConsulta(
+        descripcion="En Dep. Policial/Enviada, fechalaststate > 20 días",
+        estados=("En Dep. Policial", "Enviada"),
+        min_dias=20,
+    ),
+    IteracionConsulta(
+        descripcion="En Notificaciones/Entregada/No entregada, fechalaststate > 20 días",
+        estados=("En Notificaciones", "Entregada", "No entregada"),
+        min_dias=20,
+    ),
+    IteracionConsulta(
+        descripcion="Rectificación entregada/Rectificación No Entregada, fechalaststate > 20 días",
+        estados=("Rectificación entregada", "Rectificación No Entregada"),
+        min_dias=20,
+    ),
+)
 
 
 def _obtener_envios(
     conn_pg: psycopg2.extensions.connection,
-    periodo: str,
+    iteracion: IteracionConsulta,
+    momento_referencia: datetime,
 ) -> List[EnvioNotificacion]:
-    """Obtiene los envíos a consultar en el servicio SOAP."""
+    """Obtiene los envíos a consultar en el servicio SOAP para una iteración."""
 
-    fecha_inicio, fecha_fin = _validar_periodo(periodo)
+    params: List[object] = [list(iteracion.estados)]
     consulta = """
         SELECT
             ROW_NUMBER() OVER (
@@ -90,8 +154,21 @@ def _obtener_envios(
           AND COALESCE(laststage, '') <> 'Finalizada'
           AND codigoseguimientomp IS NOT NULL
           AND codigoseguimientomp <> ''
-          AND penviocedulanotificacionfechahora >= %s
-          AND penviocedulanotificacionfechahora < %s
+          AND laststagesian = ANY(%s)
+          AND fechalaststate IS NOT NULL
+    """
+
+    if iteracion.max_dias is not None:
+        fecha_minima = momento_referencia - timedelta(days=iteracion.max_dias)
+        consulta += "\n          AND fechalaststate >= %s"
+        params.append(fecha_minima)
+
+    if iteracion.min_dias is not None:
+        fecha_maxima = momento_referencia - timedelta(days=iteracion.min_dias)
+        consulta += "\n          AND fechalaststate < %s"
+        params.append(fecha_maxima)
+
+    consulta += """
         ORDER BY penviocedulanotificacionfechahora,
                  pmovimientoid,
                  pactuacionid,
@@ -99,7 +176,7 @@ def _obtener_envios(
     """
 
     with conn_pg.cursor(cursor_factory=extras.DictCursor) as cursor:
-        cursor.execute(consulta, (fecha_inicio, fecha_fin))
+        cursor.execute(consulta, tuple(params))
         filas = cursor.fetchall()
 
     envios: List[EnvioNotificacion] = []
@@ -303,66 +380,90 @@ def _almacenar_xml(
     return "update"
 
 
-def procesar_periodo(periodo: str, usar_test: Optional[bool] = None) -> None:
-    """Ejecuta el flujo completo para un período ``YYYYMM``."""
+def procesar_envios(usar_test: Optional[bool] = None) -> None:
+    """Ejecuta el flujo completo para las iteraciones configuradas."""
 
     bandera_test = default_test_flag if usar_test is None else usar_test
     _log_step(
-        "procesar_periodo",
+        "procesar_envios",
         "INICIO",
-        f"Procesando período {periodo} (test={bandera_test})",
+        f"Procesando iteraciones (test={bandera_test})",
     )
+
+    momento_referencia = datetime.now()
 
     with psycopg2.connect(**pgsql_config) as conn_pg, psycopg2.connect(**panel_config) as conn_panel:
         conn_pg.autocommit = False
         conn_panel.autocommit = False
 
-        envios = _obtener_envios(conn_pg, periodo)
-        if not envios:
-            _log_step("procesar_periodo", "OK", "Sin envíos para procesar")
-            return
-
-        _log_step(
-            "procesar_periodo",
-            "OK",
-            f"{len(envios)} envíos a consultar",
-        )
-
-        for envio in envios:
+        for iteracion in ITERACIONES:
             _log_step(
-                "procesar_periodo",
+                "procesar_envios",
                 "INICIO",
-                (
-                    "Consultando servicio para seguimiento "
-                    f"{envio.codigoseguimientomp}"
-                ),
+                f"Iteración: {iteracion.descripcion}",
             )
 
-            resultado = _invocar_servicio(envio.codigoseguimientomp, bandera_test)
-            if resultado is None:
+            envios = _obtener_envios(conn_pg, iteracion, momento_referencia)
+            if not envios:
+                _log_step(
+                    "procesar_envios",
+                    "OK",
+                    "Sin envíos para procesar",
+                )
                 continue
 
-            accion = _almacenar_xml(conn_panel, envio, resultado.xml_respuesta)
-            if accion == "insert":
+            _log_step(
+                "procesar_envios",
+                "OK",
+                f"{len(envios)} envíos a consultar",
+            )
+
+            for envio in envios:
                 _log_step(
-                    "procesar_periodo",
-                    "OK",
-                    f"Insertado retorno de {envio.codigoseguimientomp}",
-                )
-            elif accion == "update":
-                _log_step(
-                    "procesar_periodo",
-                    "OK",
-                    f"Actualizado retorno de {envio.codigoseguimientomp}",
-                )
-            else:
-                _log_step(
-                    "procesar_periodo",
-                    "OK",
-                    f"Sin cambios para {envio.codigoseguimientomp}",
+                    "procesar_envios",
+                    "INICIO",
+                    (
+                        "Consultando servicio para seguimiento "
+                        f"{envio.codigoseguimientomp}"
+                    ),
                 )
 
-    _log_step("procesar_periodo", "FIN", "Proceso completado")
+                resultado = _invocar_servicio(envio.codigoseguimientomp, bandera_test)
+                if resultado is None:
+                    continue
+
+                accion = _almacenar_xml(conn_panel, envio, resultado.xml_respuesta)
+                if accion == "insert":
+                    _log_step(
+                        "procesar_envios",
+                        "OK",
+                        f"Insertado retorno de {envio.codigoseguimientomp}",
+                    )
+                elif accion == "update":
+                    _log_step(
+                        "procesar_envios",
+                        "OK",
+                        f"Actualizado retorno de {envio.codigoseguimientomp}",
+                    )
+                else:
+                    _log_step(
+                        "procesar_envios",
+                        "OK",
+                        f"Sin cambios para {envio.codigoseguimientomp}",
+                    )
+
+    _log_step("procesar_envios", "FIN", "Proceso completado")
+
+
+def procesar_periodo(periodo: str, usar_test: Optional[bool] = None) -> None:
+    """Compatibilidad hacia atrás: delega en :func:`procesar_envios`."""
+
+    _log_step(
+        "procesar_periodo",
+        "ADVERTENCIA",
+        "El parámetro de período se ignora en la lógica actual",
+    )
+    procesar_envios(usar_test=usar_test)
 
 
 def _parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
@@ -373,10 +474,6 @@ def _parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
             "Obtiene los estados de notificación desde el servicio SOAP del "
             "Ministerio Público y los almacena en retornomp."
         )
-    )
-    parser.add_argument(
-        "periodo",
-        help="Período a procesar en formato YYYYMM",
     )
     parser.add_argument(
         "--test",
@@ -390,7 +487,7 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
     """Punto de entrada para ejecución por consola."""
 
     args = _parse_args(argv)
-    procesar_periodo(args.periodo, usar_test=args.test)
+    procesar_envios(usar_test=args.test)
 
 
 if __name__ == "__main__":
