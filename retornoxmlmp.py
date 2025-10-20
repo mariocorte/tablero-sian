@@ -151,7 +151,7 @@ def _obtener_envios(
             codigoseguimientomp
         FROM enviocedulanotificacionpolicia
         WHERE COALESCE(descartada, FALSE) = FALSE
-          AND COALESCE(laststage, '') <> 'Finalizada'
+          AND COALESCE(laststagesian, '') <> 'Finalizada'
           AND codigoseguimientomp IS NOT NULL
           AND codigoseguimientomp <> ''
           AND laststagesian = ANY(%s)
