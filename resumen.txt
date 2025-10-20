@@ -22,6 +22,20 @@ Procesos de sincronización
   estados de las notificaciones, incluyendo operaciones de depuración sobre
   ``enviocedulanotificacionpolicia``.
 
+### Detalle del flujo de sincronización
+* ``retornoxmlmp.py`` filtra los registros de ``enviocedulanotificacion`` cuyo
+  ``laststagesian`` está en ``NULL``, ``Pendiente`` o ``Ingresada`` y cuya
+  ``fechalaststate`` tiene una antigüedad máxima de diez días. Por cada envío
+  válido invoca la operación SOAP ``ObtenerEstadoNotificacion`` del Ministerio
+  Público y almacena el XML de respuesta en ``retornomp``.
+* La función ``_almacenar_xml`` inserta los nuevos XML con ``procesado = FALSE``
+  y ``fechaproceso = NULL``. Si el XML cambia respecto del almacenado, actualiza
+  la fila existente y vuelve a marcarla como pendiente de procesamiento.
+* ``historialsian.py`` usa ``pre_historial()`` para leer exclusivamente las
+  filas de ``retornomp`` con ``procesado = FALSE``. Tras generar el historial,
+  ``_marcar_retornomp_procesado`` establece ``procesado = TRUE`` y registra la
+  fecha, asegurando que solo se reprocesen los registros con novedades.
+
 Archivos SQL de apoyo
 ---------------------
 * ``set_laststate.sql`` y ``ultimoestado.sql``: scripts SQL para actualizar y
