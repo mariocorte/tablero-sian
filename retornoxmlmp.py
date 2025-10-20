@@ -59,6 +59,7 @@ class IteracionConsulta:
     estados: Tuple[str, ...]
     min_dias: Optional[int] = None
     max_dias: Optional[int] = None
+    incluir_estados_vacios: bool = False
 
 
 ITERACIONES: Tuple[IteracionConsulta, ...] = (
@@ -66,6 +67,7 @@ ITERACIONES: Tuple[IteracionConsulta, ...] = (
         descripcion="Pendiente/Ingresada, fechalaststate <= 10 días",
         estados=("Pendiente", "Ingresada"),
         max_dias=10,
+        incluir_estados_vacios=True,
     ),
     IteracionConsulta(
         descripcion="En Dep. Policial/Enviada, fechalaststate <= 10 días",
@@ -87,6 +89,7 @@ ITERACIONES: Tuple[IteracionConsulta, ...] = (
         estados=("Pendiente", "Ingresada"),
         min_dias=10,
         max_dias=20,
+        incluir_estados_vacios=True,
     ),
     IteracionConsulta(
         descripcion="En Dep. Policial/Enviada, 10 < fechalaststate <= 20 días",
@@ -110,6 +113,7 @@ ITERACIONES: Tuple[IteracionConsulta, ...] = (
         descripcion="Pendiente/Ingresada, fechalaststate > 20 días",
         estados=("Pendiente", "Ingresada"),
         min_dias=20,
+        incluir_estados_vacios=True,
     ),
     IteracionConsulta(
         descripcion="En Dep. Policial/Enviada, fechalaststate > 20 días",
@@ -136,8 +140,16 @@ def _obtener_envios(
 ) -> List[EnvioNotificacion]:
     """Obtiene los envíos a consultar en el servicio SOAP para una iteración."""
 
-    params: List[object] = [list(iteracion.estados)]
-    consulta = """
+    estados_considerados = list(iteracion.estados)
+    if iteracion.incluir_estados_vacios:
+        estados_considerados.append("")
+
+    comparacion_estados = "laststagesian = ANY(%s)"
+    if iteracion.incluir_estados_vacios:
+        comparacion_estados = "COALESCE(laststagesian, '') = ANY(%s)"
+
+    params: List[object] = [estados_considerados]
+    consulta = f"""
         SELECT
             ROW_NUMBER() OVER (
                 ORDER BY penviocedulanotificacionfechahora,
@@ -154,7 +166,7 @@ def _obtener_envios(
           AND COALESCE(laststagesian, '') <> 'Finalizada'
           AND codigoseguimientomp IS NOT NULL
           AND codigoseguimientomp <> ''
-          AND laststagesian = ANY(%s)
+          AND {comparacion_estados}
           AND fechalaststate IS NOT NULL
     """
 
@@ -318,11 +330,6 @@ def _almacenar_xml(
     xml_nuevo = xml_respuesta.strip()
 
     if xml_actual is None:
-        _log_step(
-            "_almacenar_xml",
-            "INICIO",
-            f"Insertando retorno para {envio.codigoseguimientomp}",
-        )
         sentencia = """
             INSERT INTO retornomp (
                 pmovimientoid,
@@ -351,11 +358,6 @@ def _almacenar_xml(
     if xml_actual == xml_nuevo:
         return "sin_cambios"
 
-    _log_step(
-        "_almacenar_xml",
-        "INICIO",
-        f"Actualizando retorno para {envio.codigoseguimientomp}",
-    )
     sentencia = """
         UPDATE retornomp
         SET contenido_xml = %s,
@@ -384,11 +386,6 @@ def procesar_envios(usar_test: Optional[bool] = None) -> None:
     """Ejecuta el flujo completo para las iteraciones configuradas."""
 
     bandera_test = default_test_flag if usar_test is None else usar_test
-    _log_step(
-        "procesar_envios",
-        "INICIO",
-        f"Procesando iteraciones (test={bandera_test})",
-    )
 
     momento_referencia = datetime.now()
 
@@ -397,62 +394,28 @@ def procesar_envios(usar_test: Optional[bool] = None) -> None:
         conn_panel.autocommit = False
 
         for iteracion in ITERACIONES:
-            _log_step(
-                "procesar_envios",
-                "INICIO",
-                f"Iteración: {iteracion.descripcion}",
-            )
-
             envios = _obtener_envios(conn_pg, iteracion, momento_referencia)
+            inicio_iteracion = datetime.now()
+            cantidad_envios = len(envios)
+            mensaje_iteracion = (
+                "[procesar_envios] Iteración: {descripcion} | Inicio: {inicio:%Y-%m-%d %H:%M:%S} | "
+                "Registros a procesar: {cantidad}"
+            ).format(
+                descripcion=iteracion.descripcion,
+                inicio=inicio_iteracion,
+                cantidad=cantidad_envios,
+            )
+            print(mensaje_iteracion)
+
             if not envios:
-                _log_step(
-                    "procesar_envios",
-                    "OK",
-                    "Sin envíos para procesar",
-                )
                 continue
 
-            _log_step(
-                "procesar_envios",
-                "OK",
-                f"{len(envios)} envíos a consultar",
-            )
-
             for envio in envios:
-                _log_step(
-                    "procesar_envios",
-                    "INICIO",
-                    (
-                        "Consultando servicio para seguimiento "
-                        f"{envio.codigoseguimientomp}"
-                    ),
-                )
-
                 resultado = _invocar_servicio(envio.codigoseguimientomp, bandera_test)
                 if resultado is None:
                     continue
 
-                accion = _almacenar_xml(conn_panel, envio, resultado.xml_respuesta)
-                if accion == "insert":
-                    _log_step(
-                        "procesar_envios",
-                        "OK",
-                        f"Insertado retorno de {envio.codigoseguimientomp}",
-                    )
-                elif accion == "update":
-                    _log_step(
-                        "procesar_envios",
-                        "OK",
-                        f"Actualizado retorno de {envio.codigoseguimientomp}",
-                    )
-                else:
-                    _log_step(
-                        "procesar_envios",
-                        "OK",
-                        f"Sin cambios para {envio.codigoseguimientomp}",
-                    )
-
-    _log_step("procesar_envios", "FIN", "Proceso completado")
+                _almacenar_xml(conn_panel, envio, resultado.xml_respuesta)
 
 
 def procesar_periodo(periodo: str, usar_test: Optional[bool] = None) -> None:
