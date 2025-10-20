@@ -1,0 +1,38 @@
+Resumen del proyecto Tablero SIAN
+=================================
+
+Este documento reemplaza al antiguo script ``resumen.py`` y ofrece una vista
+rápida de los componentes principales del repositorio.
+
+Aplicación web
+--------------
+* ``app.py``: servicio FastAPI que expone un formulario HTML para ejecutar los
+  procesos de sincronización. Gestiona las conexiones a PostgreSQL, consulta
+  parámetros almacenados y orquesta los ciclos de procesamiento Penal y de
+  Violencia.
+* ``templates/index.html``: plantilla Jinja2 utilizada para renderizar el
+  formulario web presentado por la aplicación.
+
+Procesos de sincronización
+--------------------------
+* ``retornoxmlmp.py``: script de línea de comandos que consulta envíos
+  pendientes, consume el servicio SOAP del Ministerio Público y guarda las
+  respuestas XML completas en la tabla ``retornomp``.
+* ``historialsian.py``: utilidades para normalizar y almacenar el historial de
+  estados de las notificaciones, incluyendo operaciones de depuración sobre
+  ``enviocedulanotificacionpolicia``.
+
+Archivos SQL de apoyo
+---------------------
+* ``set_laststate.sql`` y ``ultimoestado.sql``: scripts SQL para actualizar y
+  consultar estados en la base de datos.
+* ``analisisfinnotif.sql``: consulta orientada al análisis de notificaciones
+  finalizadas.
+
+Otros recursos
+--------------
+* ``requirements.txt``: dependencias Python necesarias para ejecutar los
+  servicios y scripts.
+* ``README.md``: instrucciones generales para instalar y ejecutar el proyecto.
+
+Para una descripción detallada consulte cada archivo individual.
