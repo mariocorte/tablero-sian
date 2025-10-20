@@ -1,0 +1,371 @@
+%PDF-1.4
+%
+1 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+2 0 obj
+<< /Length 1897 >>
+stream
+q
+1 w
+BT
+/F1 20 Tf
+144 740 Td
+(Flujo de sincronizacin Tablero SIAN) Tj
+ET
+0.84 0.91 0.99 rg
+146 625 320 70 re f
+0.1 0.32 0.46 RG
+146 625 320 70 re S
+0 0 0 rg
+BT
+/F1 12 Tf
+233.1 680 Td
+(Inicio del ciclo programado) Tj
+ET
+0.84 0.91 0.99 rg
+146 535 320 70 re f
+0.1 0.32 0.46 RG
+146 535 320 70 re S
+0 0 0 rg
+BT
+/F1 12 Tf
+265.5 590 Td
+(retornoxmlmp.py) Tj
+ET
+BT
+/F1 12 Tf
+227.7 575.6 Td
+(Filtra envos y consulta SOAP) Tj
+ET
+0.84 0.91 0.99 rg
+146 445 320 70 re f
+0.1 0.32 0.46 RG
+146 445 320 70 re S
+0 0 0 rg
+BT
+/F1 12 Tf
+268.2 500 Td
+(_almacenar_xml) Tj
+ET
+BT
+/F1 12 Tf
+222.3 485.6 Td
+(Guarda/actualiza XML pendientes) Tj
+ET
+0.84 0.91 0.99 rg
+146 355 320 70 re f
+0.1 0.32 0.46 RG
+146 355 320 70 re S
+0 0 0 rg
+BT
+/F1 12 Tf
+262.8 410 Td
+(historialsian.py) Tj
+ET
+BT
+/F1 12 Tf
+214.2 395.6 Td
+(Genera historial con pre_historial) Tj
+ET
+0.84 0.91 0.99 rg
+146 265 320 70 re f
+0.1 0.32 0.46 RG
+146 265 320 70 re S
+0 0 0 rg
+BT
+/F1 12 Tf
+233.1 320 Td
+(_marcar_retornomp_procesado) Tj
+ET
+BT
+/F1 12 Tf
+222.3 305.6 Td
+(Marca registros como procesados) Tj
+ET
+0.84 0.91 0.99 rg
+146 175 320 70 re f
+0.1 0.32 0.46 RG
+146 175 320 70 re S
+0 0 0 rg
+BT
+/F1 12 Tf
+270.9 230 Td
+(Fin del ciclo) Tj
+ET
+0 0 0 RG
+306 625 m
+306 605 l S
+0 0 0 rg
+306 605 m
+310.8 613 l
+301.2 613 l f
+0 0 0 RG
+306 535 m
+306 515 l S
+0 0 0 rg
+306 515 m
+310.8 523 l
+301.2 523 l f
+0 0 0 RG
+306 445 m
+306 425 l S
+0 0 0 rg
+306 425 m
+310.8 433 l
+301.2 433 l f
+0 0 0 RG
+306 355 m
+306 335 l S
+0 0 0 rg
+306 335 m
+310.8 343 l
+301.2 343 l f
+0 0 0 RG
+306 265 m
+306 245 l S
+0 0 0 rg
+306 245 m
+310.8 253 l
+301.2 253 l f
+0 0 0 RG
+466 300 m
+506 300 l
+506 570 l
+466 570 l
+S
+0 0 0 rg
+466 570 m
+474 565.2 l
+474 574.8 l f
+BT
+/F1 10 Tf
+448.75 490 Td
+(Nuevos XML pendientes) Tj
+ET
+BT
+/F1 11 Tf
+145.12 120 Td
+(Cada ciclo procesa solo registros con cambios recientes y respeta) Tj
+ET
+BT
+/F1 11 Tf
+187.2 106.8 Td
+(las ventanas de tiempo descritas en resumen.txt.) Tj
+ET
+Q
+endstream
+endobj
+3 0 obj
+<< /Type /Page /Parent 6 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 1 0 R >> >> /Contents 2 0 R >>
+endobj
+4 0 obj
+<< /Length 2890 >>
+stream
+q
+1 w
+BT
+/F1 20 Tf
+198 740 Td
+(Casos de uso principales) Tj
+ET
+0.99 0.97 0.91 rg
+150 160 312 460 re f
+0.1 0.32 0.46 RG
+150 160 312 460 re S
+0 0 0 rg
+BT
+/F1 13 Tf
+238.72 590 Td
+(Aplicacin Tablero SIAN) Tj
+ET
+0.83 0.96 0.89 rg
+416 480 m
+416 504.85 366.75 525 306 525 c
+245.25 525 196 504.85 196 480 c
+196 455.15 245.25 435 306 435 c
+366.75 435 416 455.15 416 480 c
+f
+0.1 0.32 0.46 RG
+416 480 m
+416 504.85 366.75 525 306 525 c
+245.25 525 196 504.85 196 480 c
+196 455.15 245.25 435 306 435 c
+366.75 435 416 455.15 416 480 c
+S
+0 0 0 rg
+BT
+/F1 12 Tf
+268.2 495 Td
+(Ejecutar ciclo) Tj
+ET
+BT
+/F1 12 Tf
+260.1 480.6 Td
+(de sincronizacin) Tj
+ET
+0.83 0.96 0.89 rg
+416 380 m
+416 404.85 366.75 425 306 425 c
+245.25 425 196 404.85 196 380 c
+196 355.15 245.25 335 306 335 c
+366.75 335 416 355.15 416 380 c
+f
+0.1 0.32 0.46 RG
+416 380 m
+416 404.85 366.75 425 306 425 c
+245.25 425 196 404.85 196 380 c
+196 355.15 245.25 335 306 335 c
+366.75 335 416 355.15 416 380 c
+S
+0 0 0 rg
+BT
+/F1 12 Tf
+260.1 395 Td
+(Revisar historial) Tj
+ET
+BT
+/F1 12 Tf
+260.1 380.6 Td
+(de notificaciones) Tj
+ET
+0.83 0.96 0.89 rg
+416 280 m
+416 304.85 366.75 325 306 325 c
+245.25 325 196 304.85 196 280 c
+196 255.15 245.25 235 306 235 c
+366.75 235 416 255.15 416 280 c
+f
+0.1 0.32 0.46 RG
+416 280 m
+416 304.85 366.75 325 306 325 c
+245.25 325 196 304.85 196 280 c
+196 255.15 245.25 235 306 235 c
+366.75 235 416 255.15 416 280 c
+S
+0 0 0 rg
+BT
+/F1 12 Tf
+249.3 295 Td
+(Actualizar parmetros) Tj
+ET
+BT
+/F1 12 Tf
+276.3 280.6 Td
+(de conexin) Tj
+ET
+1 1 1 rg
+112 420 m
+112 426.63 106.63 432 100 432 c
+93.37 432 88 426.63 88 420 c
+88 413.37 93.37 408 100 408 c
+106.63 408 112 413.37 112 420 c
+f
+0 0 0 RG
+112 420 m
+112 426.63 106.63 432 100 432 c
+93.37 432 88 426.63 88 420 c
+88 413.37 93.37 408 100 408 c
+106.63 408 112 413.37 112 420 c
+S
+0 0 0 rg
+0 0 0 RG
+100 408 m 100 380 l S
+82 400 m 118 400 l S
+100 380 m 84 352 l S
+100 380 m 116 352 l S
+BT
+/F1 12 Tf
+120 440 Td
+(Operador SIAN) Tj
+ET
+1 1 1 rg
+524 480 m
+524 486.63 518.63 492 512 492 c
+505.37 492 500 486.63 500 480 c
+500 473.37 505.37 468 512 468 c
+518.63 468 524 473.37 524 480 c
+f
+0 0 0 RG
+524 480 m
+524 486.63 518.63 492 512 492 c
+505.37 492 500 486.63 500 480 c
+500 473.37 505.37 468 512 468 c
+518.63 468 524 473.37 524 480 c
+S
+0 0 0 rg
+0 0 0 RG
+512 468 m 512 440 l S
+494 460 m 530 460 l S
+512 440 m 496 412 l S
+512 440 m 528 412 l S
+BT
+/F1 12 Tf
+394.8 500 Td
+(Ministerio Pblico) Tj
+ET
+0 0 0 RG
+120 480 m
+196 480 l S
+0 0 0 rg
+196 480 m
+188 484.8 l
+188 475.2 l f
+0 0 0 RG
+120 380 m
+196 380 l S
+0 0 0 rg
+196 380 m
+188 384.8 l
+188 375.2 l f
+0 0 0 RG
+120 280 m
+196 280 l S
+0 0 0 rg
+196 280 m
+188 284.8 l
+188 275.2 l f
+0 0 0 RG
+492 500 m
+416 500 l S
+0 0 0 rg
+416 500 m
+424 495.2 l
+424 504.8 l f
+BT
+/F1 11 Tf
+132.75 150 Td
+(Los actores colaboran para mantener sincronizados los estados del SIAN) Tj
+ET
+BT
+/F1 11 Tf
+192.15 136.8 Td
+(con las notificaciones del Ministerio Pblico.) Tj
+ET
+Q
+endstream
+endobj
+5 0 obj
+<< /Type /Page /Parent 6 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 1 0 R >> >> /Contents 4 0 R >>
+endobj
+6 0 obj
+<< /Type /Pages /Kids [3 0 R 5 0 R] /Count 2 >>
+endobj
+7 0 obj
+<< /Type /Catalog /Pages 6 0 R >>
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000015 00000 n 
+0000000085 00000 n 
+0000002031 00000 n 
+0000002157 00000 n 
+0000005092 00000 n 
+0000005218 00000 n 
+0000005281 00000 n 
+trailer
+<< /Size 8 /Root 7 0 R >>
+startxref
+5330
+%%EOF
