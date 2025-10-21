@@ -12,6 +12,9 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from pathlib import Path
+import subprocess
+import sys
 from typing import Iterable, List, Optional, Tuple
 
 import psycopg2
@@ -149,6 +152,40 @@ ITERACIONES: Tuple[IteracionConsulta, ...] = (
         min_dias=25,
     ),
 )
+
+
+def _ejecutar_historial_sian() -> None:
+    """Ejecuta ``historialsian.py`` y espera a que finalice."""
+
+    script_path = Path(__file__).resolve().parent / "historialsian.py"
+    if not script_path.exists():
+        _log_step(
+            "procesar_envios",
+            "ERROR",
+            f"No se encontró historialsian.py en {script_path}",
+        )
+        return
+
+    _log_step(
+        "procesar_envios",
+        "INICIO",
+        f"Ejecutando {script_path.name}",
+    )
+
+    try:
+        subprocess.run([sys.executable, str(script_path)], check=True)
+    except (subprocess.CalledProcessError, OSError) as exc:
+        _log_step(
+            "procesar_envios",
+            "ERROR",
+            f"historialsian.py finalizó con error: {exc}",
+        )
+    else:
+        _log_step(
+            "procesar_envios",
+            "OK",
+            "historialsian.py finalizó correctamente",
+        )
 
 
 def _obtener_envios(
@@ -425,7 +462,14 @@ def procesar_envios(usar_test: Optional[bool] = None) -> None:
             )
             print(mensaje_iteracion)
 
+            es_iteracion_dependencia = iteracion.estados == (
+                "En Dep. Policial",
+                "Enviada",
+            )
+
             if not envios:
+                if es_iteracion_dependencia:
+                    _ejecutar_historial_sian()
                 continue
 
             for envio in envios:
@@ -434,6 +478,9 @@ def procesar_envios(usar_test: Optional[bool] = None) -> None:
                     continue
 
                 _almacenar_xml(conn_panel, envio, resultado.xml_respuesta)
+
+            if es_iteracion_dependencia:
+                _ejecutar_historial_sian()
 
 
 def procesar_periodo(periodo: str, usar_test: Optional[bool] = None) -> None:
