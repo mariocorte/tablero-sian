@@ -77,7 +77,7 @@ ITERACIONES: Tuple[IteracionConsulta, ...] = (
     IteracionConsulta(
         descripcion="En Notificaciones/Entregada/No entregada, fechalaststate <= 10 días",
         estados=("En Notificaciones", "Entregada", "No entregada"),
-        max_dias=10,
+        max_dias=5,
     ),
     IteracionConsulta(
         descripcion="Rectificación entregada/Rectificación No Entregada, fechalaststate <= 10 días",
@@ -100,8 +100,8 @@ ITERACIONES: Tuple[IteracionConsulta, ...] = (
     IteracionConsulta(
         descripcion="En Notificaciones/Entregada/No entregada, 10 < fechalaststate <= 20 días",
         estados=("En Notificaciones", "Entregada", "No entregada"),
-        min_dias=10,
-        max_dias=20,
+        min_dias=5,
+        max_dias=10,
     ),
     IteracionConsulta(
         descripcion="Rectificación entregada/Rectificación No Entregada, 10 < fechalaststate <= 20 días",
@@ -123,12 +123,30 @@ ITERACIONES: Tuple[IteracionConsulta, ...] = (
     IteracionConsulta(
         descripcion="En Notificaciones/Entregada/No entregada, fechalaststate > 20 días",
         estados=("En Notificaciones", "Entregada", "No entregada"),
-        min_dias=20,
+        min_dias=10,
+        max_dias=15,
     ),
     IteracionConsulta(
         descripcion="Rectificación entregada/Rectificación No Entregada, fechalaststate > 20 días",
         estados=("Rectificación entregada", "Rectificación No Entregada"),
         min_dias=20,
+    ),
+    IteracionConsulta(
+        descripcion="En Notificaciones/Entregada/No entregada, fechalaststate > 20 días",
+        estados=("En Notificaciones", "Entregada", "No entregada"),
+        min_dias=15,
+        max_dias=20,
+    ),
+    IteracionConsulta(
+        descripcion="En Notificaciones/Entregada/No entregada, fechalaststate > 20 días",
+        estados=("En Notificaciones", "Entregada", "No entregada"),
+        min_dias=20,
+        max_dias=25,
+    ),
+    IteracionConsulta(
+        descripcion="En Notificaciones/Entregada/No entregada, fechalaststate > 20 días",
+        estados=("En Notificaciones", "Entregada", "No entregada"),
+        min_dias=25,
     ),
 )
 
