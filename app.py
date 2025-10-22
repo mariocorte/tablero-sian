@@ -24,15 +24,91 @@ class QueryParams(BaseModel):
 
 sql_file = "query.sql"
 sql_violencia = "queryvl2.sql"
-classpath = "ifxjdbc.jar"
+BASE_DIR = Path(__file__).resolve().parent
+DEFAULT_INFORMIX_CLASSPATH = str(BASE_DIR / "paradocker" / "lib" / "ifxjdbc.jar")
+classpath = os.environ.get("INFORMIX_JDBC_CLASSPATH", DEFAULT_INFORMIX_CLASSPATH)
 
-database_url = "jdbc:informix-sqli://scpenala:1526/cpenal:INFORMIXSERVER=scpenala;LOBCACHE=-1;JDBCTEMP=/tmp;ifxJDBCTEMP=/tmp;FREECLOBWITHRS=true"
-username = "cmayuda"
-password = "power177"
+database_url = os.environ.get(
+    "INFORMIX_JDBC_URL",
+    "jdbc:informix-sqli://scpenala:1526/cpenal:INFORMIXSERVER=scpenala;LOBCACHE=-1;JDBCTEMP=/tmp;ifxJDBCTEMP=/tmp;FREECLOBWITHRS=true",
+)
+username = os.environ.get("INFORMIX_USERNAME", "cmayuda")
+password = os.environ.get("INFORMIX_PASSWORD", "power177")
 driver_class = os.environ.get("DRIVER_CLASS", "com.informix.jdbc.IfxDriver")
 
+DEFAULT_TEST_PGSQL_CONFIG: Dict[str, Any] = {
+    "host": "10.18.250.251",
+    "port": 5432,
+    "database": "iurixPj",
+    "user": "cmayuda",
+    "password": "power177",
+}
+DEFAULT_TEST_PANEL_CONFIG: Dict[str, Any] = {
+    "host": "10.18.250.251",
+    "port": 5432,
+    "database": "panelnotificacionesws",
+    "user": "cmayuda",
+    "password": "power177",
+}
+DEFAULT_TEST_PGSQL_IW: Dict[str, Any] = {
+    "host": "10.19.252.190",
+    "port": 5432,
+    "database": "iurixpreprod",
+    "user": "cmayuda",
+    "password": "power177",
+}
+DEFAULT_PROD_PGSQL_CONFIG: Dict[str, Any] = {
+    "host": "10.18.250.250",
+    "port": 5432,
+    "database": "iurixPj",
+    "user": "cmayuda",
+    "password": "power177",
+}
+DEFAULT_PROD_PANEL_CONFIG: Dict[str, Any] = {
+    "host": "10.18.250.250",
+    "port": 5432,
+    "database": "panelnotificacionesws",
+    "user": "usrsian",
+    "password": "A8d%4pXq",
+}
+DEFAULT_PROD_PGSQL_IW: Dict[str, Any] = {
+    "host": "10.18.250.230",
+    "port": 5432,
+    "database": "iurixprod",
+    "user": "cmayuda",
+    "password": "power177",
+}
+
+
+def _build_pgsql_config(prefix: str, defaults: Dict[str, Any]) -> Dict[str, Any]:
+    config: Dict[str, Any] = {}
+    for key, default in defaults.items():
+        env_key = f"{prefix}_{key}".upper()
+        value = os.environ.get(env_key, default)
+        if key == "port":
+            try:
+                value = int(value)
+            except (TypeError, ValueError):
+                value = default
+        config[key] = value
+    return config
+
+
+def load_database_configs(test: bool) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
+    if test:
+        return (
+            _build_pgsql_config("TEST_PGSQL", DEFAULT_TEST_PGSQL_CONFIG),
+            _build_pgsql_config("TEST_PANEL", DEFAULT_TEST_PANEL_CONFIG),
+            _build_pgsql_config("TEST_PGSQL_IW", DEFAULT_TEST_PGSQL_IW),
+        )
+    return (
+        _build_pgsql_config("PROD_PGSQL", DEFAULT_PROD_PGSQL_CONFIG),
+        _build_pgsql_config("PROD_PANEL", DEFAULT_PROD_PANEL_CONFIG),
+        _build_pgsql_config("PROD_PGSQL_IW", DEFAULT_PROD_PGSQL_IW),
+    )
+
+
 app = FastAPI(title="Procesos SIAN")
-BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 query_sql_cache: Optional[str] = None
@@ -98,53 +174,7 @@ def main(params: QueryParams):
     else:
         test = True
 
-    if test:
-        pgsql_config = {
-            "host": "10.18.250.251",
-            "port": "5432",
-            "database": "iurixPj",
-            "user": "cmayuda",
-            "password": "power177"
-        }
-        panel_config = {
-            "host": "10.18.250.251",
-            "port": "5432",
-            "database": "panelnotificacionesws",
-            "user": "cmayuda",
-            "password": "power177"
-
-        }
-        pgsql_iw = {
-            "host": "10.19.252.190",
-            "port": "5432",
-            "database": "iurixpreprod",
-            "user": "cmayuda",
-            "password": "power177"
-        }
-    else:
-        pgsql_config = {
-            "host": "10.18.250.250",
-            "port": "5432",
-            "database": "iurixPj",
-            "user": "cmayuda",
-            "password": "power177"
-
-        }
-        panel_config = {
-            "host": "10.18.250.250",
-            "port": "5432",
-            "database": "panelnotificacionesws",
-            "user": "usrsian",
-            "password": "A8d%4pXq"
-
-        }
-        pgsql_iw = {
-            "host": "10.18.250.230",
-            "port": "5432",
-            "database": "iurixprod",
-            "user": "cmayuda",
-            "password": "power177"
-        }
+    pgsql_config, panel_config, pgsql_iw = load_database_configs(test)
 
     paso = True
     impix = 0
@@ -168,13 +198,7 @@ def main(params: QueryParams):
 
 
 def cargar_consulta(archivo):
-    pgsql_config = {
-        "host": "10.18.250.250",
-        "port": "5432",
-        "database": "iurixPj",
-        "user": "cmayuda",
-        "password": "power177"
-    }
+    pgsql_config = _build_pgsql_config("PROD_PGSQL", DEFAULT_PROD_PGSQL_CONFIG)
     query = f"""SELECT parametroblobfile FROM parametro \
              WHERE parametronombre = '{archivo}';"""
     print(query)

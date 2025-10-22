@@ -1,0 +1,23 @@
+version: "3.9"
+
+x-tablero-base: &tablero-base
+  build:
+    context: ..
+    dockerfile: paradocker/Dockerfile
+  env_file:
+    - ./paradocker/.env
+  volumes:
+    - ./paradocker/lib/ifxjdbc.jar:/app/paradocker/lib/ifxjdbc.jar:ro
+
+services:
+  tablero-sian-web:
+    <<: *tablero-base
+    command: ["server"]
+    ports:
+      - "8000:8000"
+
+  tablero-sian-job:
+    <<: *tablero-base
+    command: ["job"]
+    profiles:
+      - job
