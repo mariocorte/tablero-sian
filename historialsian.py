@@ -2,15 +2,60 @@ import psycopg2
 from datetime import datetime, date
 import xml.etree.ElementTree as ET
 from typing import Optional, Union, Iterable, Dict, Any, List, Tuple
+from collections import defaultdict
+
+
+class SummaryCollector:
+    """Helper class to collect processing statistics for the execution."""
+
+    _acciones = ("agregados", "modificados", "ignorados")
+
+    def __init__(self) -> None:
+        self._datos = defaultdict(lambda: {accion: 0 for accion in self._acciones})
+        self._errores: List[str] = []
+
+    def add(self, tabla: str, accion: str, cantidad: int = 1) -> None:
+        accion_normalizada = accion.lower()
+        if cantidad is None or cantidad <= 0:
+            return
+        if accion_normalizada not in self._acciones:
+            raise ValueError(f"Acción desconocida: {accion}")
+        self._datos[tabla][accion_normalizada] += cantidad
+
+    def add_error(self, contexto: str, mensaje: str = "") -> None:
+        detalle = contexto if not mensaje else f"{contexto}: {mensaje}"
+        self._errores.append(detalle)
+
+    def imprimir(self) -> None:
+        lineas = ["Resumen de procesamiento:"]
+        if self._datos:
+            for tabla in sorted(self._datos):
+                estadisticas = self._datos[tabla]
+                lineas.append(
+                    "- {tabla}: agregados={agregados}, modificados={modificados}, "
+                    "ignorados={ignorados}".format(tabla=tabla, **estadisticas)
+                )
+        else:
+            lineas.append("- Sin cambios registrados.")
+
+        if self._errores:
+            lineas.append("Errores:")
+            for error in self._errores:
+                lineas.append(f"  - {error}")
+        else:
+            lineas.append("Errores: ninguno")
+
+        print("\n".join(lineas))
+
+
+SUMMARY = SummaryCollector()
 
 
 def _log_step(func_name: str, status: str, message: str = "") -> None:
-    """Helper to print debug information with unified format."""
+    """Collect errors to include them in the final summary."""
 
-    base = f"[{func_name}] {status}"
-    if message:
-        base = f"{base}: {message}"
-    print(base)
+    if status.upper() == "ERROR":
+        SUMMARY.add_error(func_name, message)
 
 test = False
 
@@ -112,13 +157,6 @@ def lasstage(
     )
 
     ultimo_estado = estados_filtrados[-1]
-    print(
-        "******Tag: {tag}, Atributos: {attrs}, valor: {valor}".format(
-            tag="{http://tempuri.org/}Estado",
-            attrs={},
-            valor=ultimo_estado.get("estado") or "",
-        )
-    )
     _log_step(
         "lasstage",
         "OK",
@@ -138,7 +176,9 @@ def pre_historial():
                     "update enviocedulanotificacionpolicia set finsian = True "
                     "where descartada = True and finsian <> True"
                 )
-                _log_step("pre_historial", "OK", "Registros descartados marcados como finalizados")
+                SUMMARY.add(
+                    "enviocedulanotificacionpolicia", "modificados", cursor_pg.rowcount
+                )
 
                 cursor_pg.execute(
                     "update enviocedulanotificacionpolicia set descartada= false, "
@@ -146,10 +186,8 @@ def pre_historial():
                     "where penviocedulanotificacionfechahora >= current_date - INTERVAL '1 days' "
                     "and coalesce(descartada,false) = false"
                 )
-                _log_step(
-                    "pre_historial",
-                    "OK",
-                    "Registros reiniciados para seguimiento reciente",
+                SUMMARY.add(
+                    "enviocedulanotificacionpolicia", "modificados", cursor_pg.rowcount
                 )
 
             conexion_pg.commit()
@@ -360,6 +398,7 @@ def _marcar_retornomp_procesado(
             """,
             (pmovimientoid, pactuacionid, pdomicilioelectronicopj),
         )
+        SUMMARY.add("retornomp", "modificados", cursor.rowcount)
     conexion_panel.commit()
 
 
@@ -418,9 +457,6 @@ def grabar_historico(
             with conexion.cursor() as cursor:
                 estado_texto = estado or ""
                 fecha_estado_texto = _formatear_fecha_estado(fecha_estado)
-                print(
-                    f"{CODIGO_SEGUIMIENTO} -> Estado: {estado_texto} | Fecha: {fecha_estado_texto}"
-                )
 
                 if estado_texto.upper() in (
                     "ENTREGADA",
@@ -429,7 +465,6 @@ def grabar_historico(
                     "FINALIZADA",
                 ):
                     finsian = True
-                    print(f"{CODIGO_SEGUIMIENTO} -> Finalizada")
                 else:
                     finsian = False
 
@@ -443,6 +478,11 @@ def grabar_historico(
                 cursor.execute(
                     update_query,
                     (estado_texto, fecha_estado, finsian, CODIGO_SEGUIMIENTO),
+                )
+                SUMMARY.add(
+                    "enviocedulanotificacionpolicia",
+                    "modificados",
+                    cursor.rowcount,
                 )
                 conexion.commit()
                 _log_step(
@@ -640,6 +680,7 @@ def _guardar_historial_notpol(
                 )
 
                 insertados = 0
+                ignorados = 0
                 for estado in estados:
                     clave = _construir_clave_estado(
                         estado.get('estado_id'),
@@ -647,11 +688,7 @@ def _guardar_historial_notpol(
                         estado.get('estado'),
                     )
                     if clave in claves_existentes:
-                        _log_step(
-                            "_guardar_historial_notpol",
-                            "OK",
-                            f"Estado duplicado omitido en {CODIGO_SEGUIMIENTO}: {clave}",
-                        )
+                        ignorados += 1
                         continue
 
                     valores = (
@@ -675,6 +712,10 @@ def _guardar_historial_notpol(
                         insertados += 1
                         claves_existentes.add(clave)
             conexion.commit()
+            if insertados:
+                SUMMARY.add("notpolhistoricomp", "agregados", insertados)
+            if ignorados:
+                SUMMARY.add("notpolhistoricomp", "ignorados", ignorados)
             _log_step(
                 "_guardar_historial_notpol",
                 "OK",
@@ -722,10 +763,10 @@ def _parsear_fecha_estado_bd(fecha_estado: Optional[str]) -> Optional[datetime]:
 
 if __name__ == "__main__":
     pre_historial()
+    SUMMARY.imprimir()
     #ejecutar_control_cedulas()
     #ejecutar_control_historial()
     #registrarproceso(connpanel,'paso4')
-    print(datetime.now())
     #pre_historial()
 
 
