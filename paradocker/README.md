@@ -2,6 +2,8 @@
 
 Este directorio contiene todo lo necesario para que el equipo de Docker construya y publique la imagen contenedora de la aplicación **Tablero SIAN** y programe la ejecución automática del proceso diario a las 20:00 (lunes a domingo).
 
+> **Novedad:** se incluye la carpeta `fuentes_tablero_sian/` con una copia de los archivos esenciales (scripts Python, dependencias, SQL y plantillas) para facilitar el traspaso cuando el destinatario no posee acceso al repositorio original.
+
 ## Estructura
 
 - `Dockerfile`: receta de la imagen basada en `python:3.11-slim`, instala dependencias de sistema (OpenJDK para el driver Informix, toolchain para JPype, etc.), dependencias Python y copia el código de la aplicación.

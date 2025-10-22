@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Procesos SIAN</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .container {
+            background-color: #ffffff;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 480px;
+        }
+        h1 {
+            color: #333333;
+            text-align: center;
+        }
+        form {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        label {
+            font-weight: bold;
+        }
+        input, select, button {
+            padding: 0.5rem;
+            border-radius: 4px;
+            border: 1px solid #cccccc;
+            font-size: 1rem;
+        }
+        button {
+            background-color: #007acc;
+            color: #ffffff;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+        button:hover {
+            background-color: #005fa3;
+        }
+        .resultado {
+            margin-top: 1.5rem;
+            padding: 1rem;
+            border-radius: 4px;
+            background-color: #eef6ff;
+            color: #0b5394;
+        }
+        .error {
+            background-color: #fdecea;
+            color: #a61b1b;
+        }
+        pre {
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>Procesos SIAN</h1>
+    <form method="post" action="/run">
+        <div>
+            <label for="tiempo">Tiempo entre ciclos (segundos)</label>
+            <input type="number" id="tiempo" name="tiempo" min="0" required value="{{ tiempo or '' }}">
+        </div>
+        <div>
+            <label for="test">Modo</label>
+            <select id="test" name="test" required>
+                <option value="0" {% if test == 0 %}selected{% endif %}>Producción</option>
+                <option value="1" {% if test == 1 %}selected{% endif %}>Test</option>
+            </select>
+        </div>
+        <button type="submit">Ejecutar proceso</button>
+    </form>
+
+    {% if resultado %}
+        <div class="resultado{% if resultado.errores and resultado.errores > 0 %} error{% endif %}">
+            <strong>Resultado:</strong>
+            <pre>{{ resultado | tojson(indent=2) }}</pre>
+        </div>
+    {% endif %}
+</div>
+</body>
+</html>
