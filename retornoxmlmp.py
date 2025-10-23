@@ -34,6 +34,9 @@ SOAP_ENVELOPE = "http://schemas.xmlsoap.org/soap/envelope/"
 USUARIO_CLAVE = "NES7u'FR>]e:3)D"
 USUARIO_NOMBRE = "wsPoderJudicial"
 
+PROCESO_RETORNOMP_ID = 3
+MAX_OBSERVACION_LEN = 400
+
 
 @dataclass(frozen=True)
 class EnvioNotificacion:
@@ -63,6 +66,114 @@ class IteracionConsulta:
     min_dias: Optional[int] = None
     max_dias: Optional[int] = None
     incluir_estados_vacios: bool = False
+
+
+def _asegurar_tablas_panel(conn_panel: psycopg2.extensions.connection) -> None:
+    """Crea las tablas e índices requeridos para registrar ejecuciones."""
+
+    sentencia_crear_procesos = """
+        CREATE TABLE IF NOT EXISTS public.procesosat (
+            procesosatid int8 DEFAULT nextval('procesosatid'::regclass) NOT NULL,
+            procesosatnombre varchar(40) NOT NULL,
+            procesosatdescripcion varchar(400) NULL,
+            procesosatultiej timestamp NULL,
+            procesosatprxej timestamp NULL,
+            CONSTRAINT procesosat_pkey PRIMARY KEY (procesosatid)
+        )
+    """
+
+    sentencia_crear_ejecproc = """
+        CREATE TABLE IF NOT EXISTS public.ejecproc (
+            ejecprocid int8 DEFAULT nextval('ejecprocid'::regclass) NOT NULL,
+            procesosatid int8 NOT NULL,
+            ejecprocfecha timestamp NOT NULL,
+            ejecprocresultado int2 NOT NULL,
+            ejecprocobservaciones varchar(400) NULL,
+            CONSTRAINT ejecproc_pkey PRIMARY KEY (ejecprocid)
+        )
+    """
+
+    sentencia_crear_indice = """
+        CREATE INDEX IF NOT EXISTS iejecproc1
+            ON public.ejecproc USING btree (procesosatid)
+    """
+
+    with conn_panel.cursor() as cursor:
+        cursor.execute("CREATE SEQUENCE IF NOT EXISTS procesosatid")
+        cursor.execute("CREATE SEQUENCE IF NOT EXISTS ejecprocid")
+        cursor.execute(sentencia_crear_procesos)
+        cursor.execute(sentencia_crear_ejecproc)
+        cursor.execute(sentencia_crear_indice)
+    conn_panel.commit()
+
+
+def _actualizar_inicio_proceso(
+    conn_panel: psycopg2.extensions.connection, inicio: datetime
+) -> None:
+    """Actualiza la hora de última ejecución del proceso en ``procesosat``."""
+
+    sentencia = """
+        UPDATE public.procesosat
+        SET procesosatultiej = %s
+        WHERE procesosatid = %s
+    """
+
+    with conn_panel.cursor() as cursor:
+        cursor.execute(sentencia, (inicio, PROCESO_RETORNOMP_ID))
+        if cursor.rowcount == 0:
+            cursor.execute(
+                """
+                INSERT INTO public.procesosat (
+                    procesosatid,
+                    procesosatnombre,
+                    procesosatdescripcion,
+                    procesosatultiej
+                )
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (procesosatid) DO UPDATE
+                SET procesosatultiej = EXCLUDED.procesosatultiej
+                """,
+                (
+                    PROCESO_RETORNOMP_ID,
+                    "retornoxmlmp",
+                    "Sincronización de XML Ministerio Público",
+                    inicio,
+                ),
+            )
+    conn_panel.commit()
+
+
+def _registrar_evento_ejecucion(
+    conn_panel: psycopg2.extensions.connection,
+    fecha: datetime,
+    resultado: int,
+    observaciones: str,
+) -> None:
+    """Inserta un registro en ``ejecproc`` con la información indicada."""
+
+    sentencia = """
+        INSERT INTO public.ejecproc (
+            procesosatid,
+            ejecprocfecha,
+            ejecprocresultado,
+            ejecprocobservaciones
+        )
+        VALUES (%s, %s, %s, %s)
+    """
+
+    texto_observaciones = (observaciones or "")[:MAX_OBSERVACION_LEN]
+
+    with conn_panel.cursor() as cursor:
+        cursor.execute(
+            sentencia,
+            (
+                PROCESO_RETORNOMP_ID,
+                fecha,
+                resultado,
+                texto_observaciones,
+            ),
+        )
+    conn_panel.commit()
 
 
 ITERACIONES: Tuple[IteracionConsulta, ...] = (
@@ -298,7 +409,7 @@ def _invocar_servicio(
     codigo_seguimiento: str,
     usar_test: bool,
     timeout: int = 60,
-) -> Optional[ResultadoSOAP]:
+) -> Tuple[Optional[ResultadoSOAP], Optional[str]]:
     """Invoca el servicio SOAP y retorna el XML completo de la respuesta."""
 
     url = f"{_host_soap(usar_test)}/services/wsNotificacion.asmx"
@@ -317,31 +428,36 @@ def _invocar_servicio(
             verify=False,
         )
     except requests.RequestException as exc:
+        mensaje_error = f"{codigo_seguimiento}: error de red {exc}"
         _log_step(
             "_invocar_servicio",
             "ERROR",
-            f"{codigo_seguimiento}: error de red {exc}",
+            mensaje_error,
         )
-        return None
+        return None, mensaje_error
 
     if respuesta.status_code != 200:
+        mensaje_error = (
+            f"{codigo_seguimiento}: HTTP {respuesta.status_code} {respuesta.text}"
+        )
         _log_step(
             "_invocar_servicio",
             "ERROR",
-            f"{codigo_seguimiento}: HTTP {respuesta.status_code} {respuesta.text}",
+            mensaje_error,
         )
-        return None
+        return None, mensaje_error
 
     xml_texto = respuesta.text.strip()
     if not xml_texto:
+        mensaje_error = f"{codigo_seguimiento}: respuesta vacía"
         _log_step(
             "_invocar_servicio",
             "ADVERTENCIA",
-            f"{codigo_seguimiento}: respuesta vacía",
+            mensaje_error,
         )
-        return None
+        return None, mensaje_error
 
-    return ResultadoSOAP(codigo_seguimiento=codigo_seguimiento, xml_respuesta=xml_texto)
+    return ResultadoSOAP(codigo_seguimiento=codigo_seguimiento, xml_respuesta=xml_texto), None
 
 
 def _obtener_xml_actual(
@@ -446,15 +562,34 @@ def procesar_envios(usar_test: Optional[bool] = None) -> None:
 
     bandera_test = default_test_flag if usar_test is None else usar_test
 
-    momento_referencia = datetime.now()
+    inicio_proceso = datetime.now()
+    momento_referencia = inicio_proceso
 
     with psycopg2.connect(**pgsql_config) as conn_pg, psycopg2.connect(**panel_config) as conn_panel:
         conn_pg.autocommit = False
         conn_panel.autocommit = False
 
+        _asegurar_tablas_panel(conn_panel)
+        _actualizar_inicio_proceso(conn_panel, inicio_proceso)
+
         for iteracion in ITERACIONES:
-            envios = _obtener_envios(conn_pg, iteracion, momento_referencia)
             inicio_iteracion = datetime.now()
+
+            try:
+                envios = _obtener_envios(conn_pg, iteracion, momento_referencia)
+            except Exception as exc:
+                mensaje_error = (
+                    f"[procesar_envios] Iteración: {iteracion.descripcion} | "
+                    f"Error al obtener envíos: {exc}"
+                )
+                print(mensaje_error)
+                conn_pg.rollback()
+                conn_panel.rollback()
+                _registrar_evento_ejecucion(
+                    conn_panel, inicio_iteracion, 0, mensaje_error
+                )
+                continue
+
             cantidad_envios = len(envios)
             mensaje_iteracion = (
                 "[procesar_envios] Iteración: {descripcion} | Inicio: {inicio:%Y-%m-%d %H:%M:%S} | "
@@ -471,20 +606,72 @@ def procesar_envios(usar_test: Optional[bool] = None) -> None:
                 "Enviada",
             )
 
-            if not envios:
-                if es_iteracion_dependencia:
-                    _ejecutar_historial_sian()
-                continue
+            ejecucion_exitosa = True
 
-            for envio in envios:
-                resultado = _invocar_servicio(envio.codigoseguimientomp, bandera_test)
-                if resultado is None:
-                    continue
+            try:
+                if not envios:
+                    if es_iteracion_dependencia:
+                        _ejecutar_historial_sian()
+                else:
+                    for envio in envios:
+                        resultado, mensaje_error = _invocar_servicio(
+                            envio.codigoseguimientomp, bandera_test
+                        )
+                        if mensaje_error:
+                            observacion_error = (
+                                f"[procesar_envios] Iteración: {iteracion.descripcion} | "
+                                f"{mensaje_error}"
+                            )
+                            _registrar_evento_ejecucion(
+                                conn_panel,
+                                datetime.now(),
+                                0,
+                                observacion_error,
+                            )
+                        if resultado is None:
+                            continue
 
-                _almacenar_xml(conn_panel, envio, resultado.xml_respuesta)
+                        try:
+                            _almacenar_xml(
+                                conn_panel,
+                                envio,
+                                resultado.xml_respuesta,
+                            )
+                        except Exception as exc:
+                            conn_panel.rollback()
+                            observacion_error = (
+                                f"[procesar_envios] Iteración: {iteracion.descripcion} | "
+                                f"{envio.codigoseguimientomp}: error al almacenar XML: {exc}"
+                            )
+                            _registrar_evento_ejecucion(
+                                conn_panel,
+                                datetime.now(),
+                                0,
+                                observacion_error,
+                            )
 
-            if es_iteracion_dependencia:
-                _ejecutar_historial_sian()
+                    if es_iteracion_dependencia:
+                        _ejecutar_historial_sian()
+            except Exception as exc:
+                ejecucion_exitosa = False
+                conn_pg.rollback()
+                conn_panel.rollback()
+                observacion_error = f"{mensaje_iteracion} | Error inesperado: {exc}"
+                print(observacion_error)
+                _registrar_evento_ejecucion(
+                    conn_panel,
+                    inicio_iteracion,
+                    0,
+                    observacion_error,
+                )
+
+            if ejecucion_exitosa:
+                _registrar_evento_ejecucion(
+                    conn_panel,
+                    inicio_iteracion,
+                    1,
+                    mensaje_iteracion,
+                )
 
 
 def procesar_periodo(periodo: str, usar_test: Optional[bool] = None) -> None:
