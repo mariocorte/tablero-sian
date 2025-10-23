@@ -110,15 +110,17 @@ ITERACIONES: Tuple[IteracionConsulta, ...] = (
         max_dias=20,
     ),
     IteracionConsulta(
-        descripcion="Pendiente/Ingresada, fechalaststate > 20 días",
+        descripcion="Pendiente/Ingresada, 20 < fechalaststate <= 45 días",
         estados=("Pendiente", "Ingresada"),
         min_dias=20,
+        max_dias=45,
         incluir_estados_vacios=True,
     ),
     IteracionConsulta(
-        descripcion="En Dep. Policial/Enviada, fechalaststate > 20 días",
+        descripcion="En Dep. Policial/Enviada, 20 < fechalaststate <= 45 días",
         estados=("En Dep. Policial", "Enviada"),
         min_dias=20,
+        max_dias=45,
     ),
     IteracionConsulta(
         descripcion="En Notificaciones/Entregada/No entregada, fechalaststate > 20 días",
@@ -127,9 +129,10 @@ ITERACIONES: Tuple[IteracionConsulta, ...] = (
         max_dias=15,
     ),
     IteracionConsulta(
-        descripcion="Rectificación entregada/Rectificación No Entregada, fechalaststate > 20 días",
+        descripcion="Rectificación entregada/Rectificación No Entregada, 20 < fechalaststate <= 45 días",
         estados=("Rectificación entregada", "Rectificación No Entregada"),
         min_dias=20,
+        max_dias=45,
     ),
     IteracionConsulta(
         descripcion="En Notificaciones/Entregada/No entregada, fechalaststate > 20 días",
@@ -144,9 +147,10 @@ ITERACIONES: Tuple[IteracionConsulta, ...] = (
         max_dias=25,
     ),
     IteracionConsulta(
-        descripcion="En Notificaciones/Entregada/No entregada, fechalaststate > 20 días",
+        descripcion="En Notificaciones/Entregada/No entregada, 25 < fechalaststate <= 45 días",
         estados=("En Notificaciones", "Entregada", "No entregada"),
         min_dias=25,
+        max_dias=45,
     ),
 )
 
