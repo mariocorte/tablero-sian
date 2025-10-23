@@ -182,7 +182,7 @@ def pre_historial():
 
                 cursor_pg.execute(
                     "update enviocedulanotificacionpolicia set descartada= false, "
-                    "laststagesian = 'Sin info', fechalaststate = null "
+                    "laststagesian = 'Sin info', fechalaststate = CURRENT_TIMESTAMP "
                     "where penviocedulanotificacionfechahora >= current_date - INTERVAL '1 days' "
                     "and coalesce(descartada,false) = false"
                 )
