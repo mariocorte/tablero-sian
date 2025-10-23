@@ -659,7 +659,8 @@ def _guardar_historial_notpol(
         notpolhistoricompobservaciones, notpolhistoricompmotivo, notpolhistoricompresponsable, \
         notpolhistoricompdependencia, pmovimientoid, pactuacionid, pdomicilioelectronicopj, \
         codigoseguimientomp) \
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);"""
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) \
+        ON CONFLICT DO NOTHING;"""
 
     try:
         with psycopg2.connect(**pgsql_config) as conexion:
