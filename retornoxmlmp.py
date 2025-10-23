@@ -287,15 +287,22 @@ def _ejecutar_historial_sian() -> None:
         f"Ejecutando {script_path.name}",
     )
 
+    print(f"[retornoxmlmp] Ejecutando {script_path.name}", flush=True)
+
     try:
         subprocess.run([sys.executable, str(script_path)], check=True)
     except (subprocess.CalledProcessError, OSError) as exc:
+        print(
+            f"[retornoxmlmp] historialsian.py finalizó con error: {exc}",
+            flush=True,
+        )
         _log_step(
             "procesar_envios",
             "ERROR",
             f"historialsian.py finalizó con error: {exc}",
         )
     else:
+        print("[retornoxmlmp] historialsian.py finalizó correctamente", flush=True)
         _log_step(
             "procesar_envios",
             "OK",
