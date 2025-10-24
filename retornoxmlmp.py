@@ -778,6 +778,9 @@ def procesar_envios(usar_test: Optional[bool] = None, dias: Optional[int] = None
                     mensaje_iteracion,
                 )
 
+        if dias is not None:
+            _ejecutar_historial_sian()
+
 
 def procesar_periodo(periodo: str, usar_test: Optional[bool] = None) -> None:
     """Compatibilidad hacia atrás: delega en :func:`procesar_envios`."""
