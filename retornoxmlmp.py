@@ -66,6 +66,7 @@ class IteracionConsulta:
     min_dias: Optional[int] = None
     max_dias: Optional[int] = None
     incluir_estados_vacios: bool = False
+    omitir_filtro_estados: bool = False
 
 
 def _asegurar_tablas_panel(conn_panel: psycopg2.extensions.connection) -> None:
@@ -317,15 +318,7 @@ def _obtener_envios(
 ) -> List[EnvioNotificacion]:
     """Obtiene los envíos a consultar en el servicio SOAP para una iteración."""
 
-    estados_considerados = list(iteracion.estados)
-    if iteracion.incluir_estados_vacios:
-        estados_considerados.append("")
-
-    comparacion_estados = "laststagesian = ANY(%s)"
-    if iteracion.incluir_estados_vacios:
-        comparacion_estados = "COALESCE(laststagesian, '') = ANY(%s)"
-
-    params: List[object] = [estados_considerados]
+    params: List[object] = []
     consulta = f"""
         SELECT
             ROW_NUMBER() OVER (
@@ -343,9 +336,21 @@ def _obtener_envios(
           AND COALESCE(laststagesian, '') <> 'Finalizada'
           AND codigoseguimientomp IS NOT NULL
           AND codigoseguimientomp <> ''
-          AND {comparacion_estados}
-          AND fechalaststate IS NOT NULL
     """
+
+    if not iteracion.omitir_filtro_estados:
+        estados_considerados = list(iteracion.estados)
+        if iteracion.incluir_estados_vacios:
+            estados_considerados.append("")
+
+        comparacion_estados = "laststagesian = ANY(%s)"
+        if iteracion.incluir_estados_vacios:
+            comparacion_estados = "COALESCE(laststagesian, '') = ANY(%s)"
+
+        consulta += f"\n          AND {comparacion_estados}"
+        params.append(estados_considerados)
+
+    consulta += "\n          AND fechalaststate IS NOT NULL"
 
     if iteracion.max_dias is not None:
         fecha_minima = momento_referencia - timedelta(days=iteracion.max_dias)
@@ -564,13 +569,16 @@ def _almacenar_xml(
     return "update"
 
 
-def procesar_envios(usar_test: Optional[bool] = None) -> None:
+def procesar_envios(usar_test: Optional[bool] = None, dias: Optional[int] = None) -> None:
     """Ejecuta el flujo completo para las iteraciones configuradas."""
 
     bandera_test = default_test_flag if usar_test is None else usar_test
 
     inicio_proceso = datetime.now()
     momento_referencia = inicio_proceso
+
+    if dias is not None and dias < 0:
+        raise ValueError("El parámetro 'dias' debe ser mayor o igual a cero")
 
     with psycopg2.connect(**pgsql_config) as conn_pg, psycopg2.connect(**panel_config) as conn_panel:
         conn_pg.autocommit = False
@@ -579,7 +587,23 @@ def procesar_envios(usar_test: Optional[bool] = None) -> None:
         _asegurar_tablas_panel(conn_panel)
         _actualizar_inicio_proceso(conn_panel, inicio_proceso)
 
-        for iteracion in ITERACIONES:
+        if dias is not None:
+            iteraciones = (
+                IteracionConsulta(
+                    descripcion=(
+                        "fechalaststate >= {fecha:%Y-%m-%d}".format(
+                            fecha=momento_referencia.date() - timedelta(days=dias)
+                        )
+                    ),
+                    estados=(),
+                    max_dias=dias,
+                    omitir_filtro_estados=True,
+                ),
+            )
+        else:
+            iteraciones = ITERACIONES
+
+        for iteracion in iteraciones:
             inicio_iteracion = datetime.now()
 
             try:
@@ -706,6 +730,14 @@ def _parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
         action="store_true",
         help="Utiliza el entorno de pruebas del servicio SOAP",
     )
+    parser.add_argument(
+        "--dias",
+        type=int,
+        help=(
+            "Limita la consulta a registros con fechalaststate mayor o igual a la fecha "
+            "actual menos la cantidad de días indicada"
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -713,7 +745,7 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
     """Punto de entrada para ejecución por consola."""
 
     args = _parse_args(argv)
-    procesar_envios(usar_test=args.test)
+    procesar_envios(usar_test=args.test, dias=args.dias)
 
 
 if __name__ == "__main__":
