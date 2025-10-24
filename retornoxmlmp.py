@@ -22,7 +22,9 @@ from typing import Iterable, List, Optional, Tuple
 import psycopg2
 from psycopg2 import extras
 import requests
+from requests.adapters import HTTPAdapter
 import urllib3
+from urllib3.util.retry import Retry
 
 from historialsian import _log_step, panel_config, pgsql_config, test as default_test_flag
 
@@ -38,6 +40,68 @@ USUARIO_NOMBRE = "wsPoderJudicial"
 
 PROCESO_RETORNOMP_ID = 3
 MAX_OBSERVACION_LEN = 400
+
+# Intervalo mínimo entre invocaciones consecutivas al servicio SOAP para reducir
+# la probabilidad de recibir respuestas ``HTTP 429`` cuando se ejecutan muchos
+# requerimientos de manera seguida.
+MIN_INTERVALO_SOAP_SEGUNDOS = 1.5
+
+
+class _SesionSOAP(requests.Session):
+    """Sesión configurada con reintentos para el servicio SOAP."""
+
+    def __init__(self, max_reintentos: int) -> None:
+        super().__init__()
+        reintentos_retry = max(0, max_reintentos - 1)
+        retry = Retry(
+            total=reintentos_retry,
+            read=reintentos_retry,
+            connect=reintentos_retry,
+            status=reintentos_retry,
+            backoff_factor=1.5,
+            status_forcelist=(429, 500, 502, 503, 504),
+            allowed_methods={"POST"},
+            respect_retry_after_header=True,
+            raise_on_status=False,
+        )
+        adapter = HTTPAdapter(max_retries=retry)
+        self.mount("http://", adapter)
+        self.mount("https://", adapter)
+        # La verificación del certificado ya se controla en cada petición, pero
+        # lo dejamos en ``False`` para mantener la compatibilidad con el
+        # comportamiento previo del script.
+        self.verify = False
+        # Se almacena el número lógico de reintentos solicitados para reutilizar
+        # la sesión cuando coincidan las configuraciones.
+        self._max_reintentos = max_reintentos  # type: ignore[attr-defined]
+
+
+_SESION_SOAP: Optional[_SesionSOAP] = None
+_ULTIMA_INVOCACION_SOAP: float = 0.0
+
+
+def _obtener_sesion_soap(max_reintentos: int) -> _SesionSOAP:
+    """Obtiene una sesión HTTP reutilizable con la política de reintentos."""
+
+    global _SESION_SOAP
+    if _SESION_SOAP is None or getattr(_SESION_SOAP, "_max_reintentos", None) != max_reintentos:
+        _SESION_SOAP = _SesionSOAP(max_reintentos)
+    return _SESION_SOAP
+
+
+def _respetar_intervalo_solicitudes() -> None:
+    """Garantiza un descanso mínimo entre llamadas al servicio SOAP."""
+
+    if MIN_INTERVALO_SOAP_SEGUNDOS <= 0:
+        return
+
+    global _ULTIMA_INVOCACION_SOAP
+    momento_actual = time.monotonic()
+    restante = MIN_INTERVALO_SOAP_SEGUNDOS - (momento_actual - _ULTIMA_INVOCACION_SOAP)
+    if restante > 0:
+        time.sleep(restante)
+        momento_actual = time.monotonic()
+    _ULTIMA_INVOCACION_SOAP = momento_actual
 
 
 @dataclass(frozen=True)
@@ -434,45 +498,24 @@ def _invocar_servicio(
         "SOAPAction": SOAP_ACTION,
     }
 
-    respuesta: Optional[requests.Response] = None
-    for intento in range(1, max_reintentos + 1):
-        try:
-            respuesta = requests.post(
-                url,
-                data=payload,
-                headers=headers,
-                timeout=timeout,
-                verify=False,
-            )
-        except requests.RequestException as exc:
-            mensaje_error = f"{codigo_seguimiento}: error de red {exc}"
-            _log_step(
-                "_invocar_servicio",
-                "ERROR",
-                mensaje_error,
-            )
-            return None, mensaje_error
+    sesion = _obtener_sesion_soap(max_reintentos)
 
-        if respuesta.status_code == 429 and intento < max_reintentos:
-            segundos_espera = _segundos_retry_after(
-                respuesta.headers.get("Retry-After"),
-                referencia=datetime.now(timezone.utc),
-            )
-            if segundos_espera is None:
-                segundos_espera = min(60, 5 * intento)
-
-            mensaje_reintento = (
-                f"{codigo_seguimiento}: HTTP 429, reintento {intento} "
-                f"de {max_reintentos} en {segundos_espera} s"
-            )
-            _log_step(
-                "_invocar_servicio",
-                "ADVERTENCIA",
-                mensaje_reintento,
-            )
-            time.sleep(segundos_espera)
-            continue
-        break
+    try:
+        _respetar_intervalo_solicitudes()
+        respuesta = sesion.post(
+            url,
+            data=payload,
+            headers=headers,
+            timeout=timeout,
+        )
+    except requests.RequestException as exc:
+        mensaje_error = f"{codigo_seguimiento}: error de red {exc}"
+        _log_step(
+            "_invocar_servicio",
+            "ERROR",
+            mensaje_error,
+        )
+        return None, mensaje_error
 
     if respuesta is None:
         mensaje_error = f"{codigo_seguimiento}: no se obtuvo respuesta del servicio"
@@ -481,6 +524,29 @@ def _invocar_servicio(
             "ERROR",
             mensaje_error,
         )
+        return None, mensaje_error
+
+    if respuesta.status_code == 429:
+        retry_after = respuesta.headers.get("Retry-After")
+        segundos_espera = _segundos_retry_after(
+            retry_after,
+            referencia=datetime.now(timezone.utc),
+        )
+        mensaje_error = (
+            f"{codigo_seguimiento}: HTTP 429 Too Many Requests"
+            + (
+                f" (Retry-After: {retry_after}, {segundos_espera}s)"
+                if retry_after and segundos_espera is not None
+                else ""
+            )
+        )
+        _log_step(
+            "_invocar_servicio",
+            "ADVERTENCIA",
+            mensaje_error,
+        )
+        if segundos_espera:
+            time.sleep(segundos_espera)
         return None, mensaje_error
 
     if respuesta.status_code != 200:
