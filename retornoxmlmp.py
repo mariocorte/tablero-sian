@@ -11,10 +11,12 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 import subprocess
 import sys
+import time
 from typing import Iterable, List, Optional, Tuple
 
 import psycopg2
@@ -421,6 +423,7 @@ def _invocar_servicio(
     codigo_seguimiento: str,
     usar_test: bool,
     timeout: int = 60,
+    max_reintentos: int = 3,
 ) -> Tuple[Optional[ResultadoSOAP], Optional[str]]:
     """Invoca el servicio SOAP y retorna el XML completo de la respuesta."""
 
@@ -431,16 +434,48 @@ def _invocar_servicio(
         "SOAPAction": SOAP_ACTION,
     }
 
-    try:
-        respuesta = requests.post(
-            url,
-            data=payload,
-            headers=headers,
-            timeout=timeout,
-            verify=False,
-        )
-    except requests.RequestException as exc:
-        mensaje_error = f"{codigo_seguimiento}: error de red {exc}"
+    respuesta: Optional[requests.Response] = None
+    for intento in range(1, max_reintentos + 1):
+        try:
+            respuesta = requests.post(
+                url,
+                data=payload,
+                headers=headers,
+                timeout=timeout,
+                verify=False,
+            )
+        except requests.RequestException as exc:
+            mensaje_error = f"{codigo_seguimiento}: error de red {exc}"
+            _log_step(
+                "_invocar_servicio",
+                "ERROR",
+                mensaje_error,
+            )
+            return None, mensaje_error
+
+        if respuesta.status_code == 429 and intento < max_reintentos:
+            segundos_espera = _segundos_retry_after(
+                respuesta.headers.get("Retry-After"),
+                referencia=datetime.now(timezone.utc),
+            )
+            if segundos_espera is None:
+                segundos_espera = min(60, 5 * intento)
+
+            mensaje_reintento = (
+                f"{codigo_seguimiento}: HTTP 429, reintento {intento} "
+                f"de {max_reintentos} en {segundos_espera} s"
+            )
+            _log_step(
+                "_invocar_servicio",
+                "ADVERTENCIA",
+                mensaje_reintento,
+            )
+            time.sleep(segundos_espera)
+            continue
+        break
+
+    if respuesta is None:
+        mensaje_error = f"{codigo_seguimiento}: no se obtuvo respuesta del servicio"
         _log_step(
             "_invocar_servicio",
             "ERROR",
@@ -470,6 +505,45 @@ def _invocar_servicio(
         return None, mensaje_error
 
     return ResultadoSOAP(codigo_seguimiento=codigo_seguimiento, xml_respuesta=xml_texto), None
+
+
+def _segundos_retry_after(
+    valor_header: Optional[str],
+    *,
+    referencia: Optional[datetime] = None,
+) -> Optional[int]:
+    """Convierte el encabezado ``Retry-After`` a segundos si es posible."""
+
+    if not valor_header:
+        return None
+
+    valor_normalizado = valor_header.strip()
+    if not valor_normalizado:
+        return None
+
+    if valor_normalizado.isdigit():
+        try:
+            segundos = int(valor_normalizado)
+        except ValueError:
+            return None
+        return max(0, segundos)
+
+    try:
+        fecha_reintento = parsedate_to_datetime(valor_normalizado)
+    except (TypeError, ValueError, IndexError):
+        return None
+
+    if fecha_reintento is None:
+        return None
+
+    if fecha_reintento.tzinfo is None:
+        fecha_reintento = fecha_reintento.replace(tzinfo=timezone.utc)
+
+    momento_referencia = referencia or datetime.now(timezone.utc)
+    diferencia = (fecha_reintento - momento_referencia).total_seconds()
+    if diferencia <= 0:
+        return None
+    return int(diferencia)
 
 
 def _obtener_xml_actual(
