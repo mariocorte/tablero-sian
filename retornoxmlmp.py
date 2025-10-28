@@ -952,6 +952,8 @@ def _parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--codigodeseguimientomp",
+        "--codigoseguimientomp",
+        dest="codigodeseguimientomp",
         type=str,
         help=(
             "Limita la ejecución al código de seguimiento especificado. "
