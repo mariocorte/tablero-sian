@@ -1,3 +1,4 @@
+import argparse
 import psycopg2
 from datetime import datetime, date
 import xml.etree.ElementTree as ET
@@ -165,8 +166,9 @@ def lasstage(
     return ultimo_estado, len(estados_filtrados), insertados
 
 
-def pre_historial():
+def pre_historial(codigodeseguimientomp: Optional[str] = None):
     _log_step("pre_historial", "INICIO", "Preparando actualización de registros")
+    codigo_filtrado = (codigodeseguimientomp or "").strip() or None
     try:
         with psycopg2.connect(**pgsql_config) as conexion_pg, psycopg2.connect(
             **panel_config
@@ -193,25 +195,48 @@ def pre_historial():
             conexion_pg.commit()
 
             with conexion_panel.cursor() as cursor_panel:
-                cursor_panel.execute(
-                    """
-                    SELECT
-                        pmovimientoid,
-                        pactuacionid,
-                        pdomicilioelectronicopj,
-                        contenido_xml
-                    FROM retornomp
-                    WHERE COALESCE(procesado, FALSE) = FALSE
-                    ORDER BY ultactualizacion NULLS LAST, pmovimientoid, pactuacionid
-                    """
+                consulta_retornos = [
+                    "SELECT",
+                    "    r.pmovimientoid,",
+                    "    r.pactuacionid,",
+                    "    r.pdomicilioelectronicopj,",
+                    "    r.contenido_xml",
+                    "FROM retornomp r",
+                ]
+
+                params: Tuple[Any, ...] = ()
+                if codigo_filtrado is not None:
+                    consulta_retornos.append(
+                        "JOIN enviocedulanotificacionpolicia e ON "
+                        "e.pmovimientoid = r.pmovimientoid AND "
+                        "e.pactuacionid = r.pactuacionid AND "
+                        "e.pdomicilioelectronicopj = r.pdomicilioelectronicopj"
+                    )
+
+                consulta_retornos.append("WHERE COALESCE(r.procesado, FALSE) = FALSE")
+
+                if codigo_filtrado is not None:
+                    consulta_retornos.append(
+                        "  AND TRIM(e.codigoseguimientomp) = %s"
+                    )
+                    params = (codigo_filtrado,)
+
+                consulta_retornos.append(
+                    "ORDER BY r.ultactualizacion NULLS LAST, r.pmovimientoid, r.pactuacionid"
                 )
+
+                cursor_panel.execute("\n".join(consulta_retornos), params)
                 retornos = cursor_panel.fetchall()
 
             if not retornos:
                 _log_step(
                     "pre_historial",
                     "OK",
-                    "No hay retornos pendientes en retornomp",
+                    (
+                        "No hay retornos pendientes en retornomp"
+                        if codigo_filtrado is None
+                        else f"No hay retornos pendientes para {codigo_filtrado}"
+                    ),
                 )
                 return
 
@@ -239,6 +264,18 @@ def pre_historial():
                         continue
 
                     codigoseguimiento, fecha_ultima = datos_envio
+                    if codigo_filtrado is not None and (
+                        (codigoseguimiento or "").strip() != codigo_filtrado
+                    ):
+                        _log_step(
+                            "pre_historial",
+                            "ADVERTENCIA",
+                            (
+                                "El código asociado al retorno no coincide con "
+                                f"{codigo_filtrado}"
+                            ),
+                        )
+                        continue
                     exito = llamar_his_mp(
                         pmovimientoid,
                         pactuacionid,
@@ -762,9 +799,32 @@ def _parsear_fecha_estado_bd(fecha_estado: Optional[str]) -> Optional[datetime]:
     except ValueError:
         return None
 
-if __name__ == "__main__":
-    pre_historial()
+def _parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Procesa los retornos del Ministerio Público y actualiza el historial"
+            " en SIAN."
+        )
+    )
+    parser.add_argument(
+        "--codigodeseguimientomp",
+        type=str,
+        help=(
+            "Procesa únicamente el retorno correspondiente al código de "
+            "seguimiento indicado."
+        ),
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: Optional[Iterable[str]] = None) -> None:
+    args = _parse_args(argv)
+    pre_historial(codigodeseguimientomp=args.codigodeseguimientomp)
     SUMMARY.imprimir()
+
+
+if __name__ == "__main__":
+    main()
     #ejecutar_control_cedulas()
     #ejecutar_control_historial()
     #registrarproceso(connpanel,'paso4')
