@@ -202,30 +202,38 @@ def pre_historial(codigodeseguimientomp: Optional[str] = None):
                     "    r.pdomicilioelectronicopj,",
                     "    r.contenido_xml",
                     "FROM retornomp r",
+                    "WHERE COALESCE(r.procesado, FALSE) = FALSE",
                 ]
 
-                params: Tuple[Any, ...] = ()
+                params: List[Any] = []
                 if codigo_filtrado is not None:
-                    consulta_retornos.append(
-                        "JOIN enviocedulanotificacionpolicia e ON "
-                        "e.pmovimientoid = r.pmovimientoid AND "
-                        "e.pactuacionid = r.pactuacionid AND "
-                        "e.pdomicilioelectronicopj = r.pdomicilioelectronicopj"
+                    claves_filtrado = _obtener_identificadores_por_codigo(
+                        conexion_pg, codigo_filtrado
                     )
 
-                consulta_retornos.append("WHERE COALESCE(r.procesado, FALSE) = FALSE")
+                    if not claves_filtrado:
+                        _log_step(
+                            "pre_historial",
+                            "OK",
+                            f"No se encontraron envíos para el código {codigo_filtrado}",
+                        )
+                        return
 
-                if codigo_filtrado is not None:
-                    consulta_retornos.append(
-                        "  AND TRIM(e.codigoseguimientomp) = %s"
-                    )
-                    params = (codigo_filtrado,)
+                    filtros = []
+                    for pmov, pact, pdom in claves_filtrado:
+                        filtros.append(
+                            "(r.pmovimientoid = %s AND r.pactuacionid = %s AND "
+                            "r.pdomicilioelectronicopj = %s)"
+                        )
+                        params.extend([pmov, pact, pdom])
+
+                    consulta_retornos.append("  AND (" + " OR ".join(filtros) + ")")
 
                 consulta_retornos.append(
                     "ORDER BY r.ultactualizacion NULLS LAST, r.pmovimientoid, r.pactuacionid"
                 )
 
-                cursor_panel.execute("\n".join(consulta_retornos), params)
+                cursor_panel.execute("\n".join(consulta_retornos), tuple(params))
                 retornos = cursor_panel.fetchall()
 
             if not retornos:
@@ -385,6 +393,23 @@ def llamar_his_mp(
         )
         return False
 
+
+
+def _obtener_identificadores_por_codigo(
+    conexion_pg: psycopg2.extensions.connection,
+    codigo_filtrado: str,
+) -> List[Tuple[Any, Any, Any]]:
+    """Obtiene las claves primarias asociadas a un código de seguimiento."""
+
+    consulta = """
+        SELECT pmovimientoid, pactuacionid, pdomicilioelectronicopj
+        FROM enviocedulanotificacionpolicia
+        WHERE TRIM(codigoseguimientomp) = %s
+    """
+
+    with conexion_pg.cursor() as cursor:
+        cursor.execute(consulta, (codigo_filtrado,))
+        return cursor.fetchall()
 
 
 def _obtener_datos_envio(
