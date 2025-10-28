@@ -26,7 +26,12 @@ from requests.adapters import HTTPAdapter
 import urllib3
 from urllib3.util.retry import Retry
 
-from historialsian import _log_step, panel_config, pgsql_config, test as default_test_flag
+from historialsian import (
+    _log_step,
+    panel_config,
+    pgsql_config,
+    test as default_test_flag,
+)
 
 # Evita advertencias cuando se deshabilita la verificación del certificado.
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -256,7 +261,7 @@ ITERACIONES: Tuple[IteracionConsulta, ...] = (
         max_dias=10,
     ),
     IteracionConsulta(
-        descripcion="En Notificaciones/Entregada/No entregada, fechalaststate <= 10 días",
+        descripcion="En Notificaciones/Entregada/No entregada, fechalaststate <= 5 días",
         estados=("En Notificaciones", "Entregada", "No entregada"),
         max_dias=5,
     ),
@@ -279,7 +284,7 @@ ITERACIONES: Tuple[IteracionConsulta, ...] = (
         max_dias=20,
     ),
     IteracionConsulta(
-        descripcion="En Notificaciones/Entregada/No entregada, 10 < fechalaststate <= 20 días",
+        descripcion="En Notificaciones/Entregada/No entregada, 5 < fechalaststate <= 10 días",
         estados=("En Notificaciones", "Entregada", "No entregada"),
         min_dias=5,
         max_dias=10,
@@ -304,7 +309,7 @@ ITERACIONES: Tuple[IteracionConsulta, ...] = (
         max_dias=45,
     ),
     IteracionConsulta(
-        descripcion="En Notificaciones/Entregada/No entregada, fechalaststate > 20 días",
+        descripcion="En Notificaciones/Entregada/No entregada, 10 < fechalaststate <= 15 días",
         estados=("En Notificaciones", "Entregada", "No entregada"),
         min_dias=10,
         max_dias=15,
@@ -316,13 +321,13 @@ ITERACIONES: Tuple[IteracionConsulta, ...] = (
         max_dias=45,
     ),
     IteracionConsulta(
-        descripcion="En Notificaciones/Entregada/No entregada, fechalaststate > 20 días",
+        descripcion="En Notificaciones/Entregada/No entregada, 15 < fechalaststate <= 20 días",
         estados=("En Notificaciones", "Entregada", "No entregada"),
         min_dias=15,
         max_dias=20,
     ),
     IteracionConsulta(
-        descripcion="En Notificaciones/Entregada/No entregada, fechalaststate > 20 días",
+        descripcion="En Notificaciones/Entregada/No entregada, 20 < fechalaststate <= 25 días",
         estados=("En Notificaciones", "Entregada", "No entregada"),
         min_dias=20,
         max_dias=25,
@@ -336,8 +341,18 @@ ITERACIONES: Tuple[IteracionConsulta, ...] = (
 )
 
 
-def _ejecutar_historial_sian() -> None:
-    """Ejecuta ``historialsian.py`` y espera a que finalice."""
+def _ejecutar_historial_sian(
+    codigo_seguimiento: Optional[str] = None,
+) -> None:
+    """Ejecuta ``historialsian.py`` y espera a que finalice.
+
+    Parameters
+    ----------
+    codigo_seguimiento:
+        Código específico que se desea procesar. Cuando es ``None`` se
+        ejecuta el comportamiento tradicional que procesa todos los
+        retornos pendientes.
+    """
 
     script_path = Path(__file__).resolve().parent / "historialsian.py"
     if not script_path.exists():
@@ -357,7 +372,10 @@ def _ejecutar_historial_sian() -> None:
     print(f"[retornoxmlmp] Ejecutando {script_path.name}", flush=True)
 
     try:
-        subprocess.run([sys.executable, str(script_path)], check=True)
+        comando = [sys.executable, str(script_path)]
+        if codigo_seguimiento:
+            comando.extend(["--codigodeseguimientomp", codigo_seguimiento])
+        subprocess.run(comando, check=True)
     except (subprocess.CalledProcessError, OSError) as exc:
         print(
             f"[retornoxmlmp] historialsian.py finalizó con error: {exc}",
@@ -370,17 +388,20 @@ def _ejecutar_historial_sian() -> None:
         )
     else:
         print("[retornoxmlmp] historialsian.py finalizó correctamente", flush=True)
-        _log_step(
-            "procesar_envios",
-            "OK",
-            "historialsian.py finalizó correctamente",
-        )
+        mensaje = "historialsian.py finalizó correctamente"
+        if codigo_seguimiento:
+            mensaje = (
+                f"historialsian.py finalizó correctamente para "
+                f"{codigo_seguimiento}"
+            )
+        _log_step("procesar_envios", "OK", mensaje)
 
 
 def _obtener_envios(
     conn_pg: psycopg2.extensions.connection,
     iteracion: IteracionConsulta,
     momento_referencia: datetime,
+    codigo_especifico: Optional[str] = None,
 ) -> List[EnvioNotificacion]:
     """Obtiene los envíos a consultar en el servicio SOAP para una iteración."""
 
@@ -416,7 +437,8 @@ def _obtener_envios(
         consulta += f"\n          AND {comparacion_estados}"
         params.append(estados_considerados)
 
-    consulta += "\n          AND fechalaststate IS NOT NULL"
+    if codigo_especifico is None:
+        consulta += "\n          AND fechalaststate IS NOT NULL"
 
     if iteracion.max_dias is not None:
         fecha_minima = momento_referencia - timedelta(days=iteracion.max_dias)
@@ -427,6 +449,10 @@ def _obtener_envios(
         fecha_maxima = momento_referencia - timedelta(days=iteracion.min_dias)
         consulta += "\n          AND fechalaststate < %s"
         params.append(fecha_maxima)
+
+    if codigo_especifico is not None:
+        consulta += "\n          AND TRIM(codigoseguimientomp) = %s"
+        params.append(codigo_especifico.strip())
 
     consulta += """
         ORDER BY penviocedulanotificacionfechahora,
@@ -709,7 +735,11 @@ def _almacenar_xml(
     return "update"
 
 
-def procesar_envios(usar_test: Optional[bool] = None, dias: Optional[int] = None) -> None:
+def procesar_envios(
+    usar_test: Optional[bool] = None,
+    dias: Optional[int] = None,
+    codigodeseguimientomp: Optional[str] = None,
+) -> None:
     """Ejecuta el flujo completo para las iteraciones configuradas."""
 
     bandera_test = default_test_flag if usar_test is None else usar_test
@@ -720,6 +750,8 @@ def procesar_envios(usar_test: Optional[bool] = None, dias: Optional[int] = None
     if dias is not None and dias < 0:
         raise ValueError("El parámetro 'dias' debe ser mayor o igual a cero")
 
+    codigo_filtrado = (codigodeseguimientomp or "").strip() or None
+
     with psycopg2.connect(**pgsql_config) as conn_pg, psycopg2.connect(**panel_config) as conn_panel:
         conn_pg.autocommit = False
         conn_panel.autocommit = False
@@ -727,7 +759,17 @@ def procesar_envios(usar_test: Optional[bool] = None, dias: Optional[int] = None
         _asegurar_tablas_panel(conn_panel)
         _actualizar_inicio_proceso(conn_panel, inicio_proceso)
 
-        if dias is not None:
+        if codigo_filtrado is not None:
+            iteraciones = (
+                IteracionConsulta(
+                    descripcion=(
+                        f"Código seguimiento {codigo_filtrado}"
+                    ),
+                    estados=(),
+                    omitir_filtro_estados=True,
+                ),
+            )
+        elif dias is not None:
             iteraciones = (
                 IteracionConsulta(
                     descripcion=(
@@ -743,11 +785,18 @@ def procesar_envios(usar_test: Optional[bool] = None, dias: Optional[int] = None
         else:
             iteraciones = ITERACIONES
 
+        se_procesaron_envios_codigo = False
+
         for iteracion in iteraciones:
             inicio_iteracion = datetime.now()
 
             try:
-                envios = _obtener_envios(conn_pg, iteracion, momento_referencia)
+                envios = _obtener_envios(
+                    conn_pg,
+                    iteracion,
+                    momento_referencia,
+                    codigo_especifico=codigo_filtrado,
+                )
             except Exception as exc:
                 mensaje_error = (
                     f"[procesar_envios] Iteración: {iteracion.descripcion} | "
@@ -776,14 +825,31 @@ def procesar_envios(usar_test: Optional[bool] = None, dias: Optional[int] = None
                 "En Dep. Policial",
                 "Enviada",
             )
+            es_iteracion_notificaciones_25_45 = (
+                iteracion.estados
+                == (
+                    "En Notificaciones",
+                    "Entregada",
+                    "No entregada",
+                )
+                and iteracion.min_dias == 25
+                and iteracion.max_dias == 45
+            )
+
+            ejecutar_historial_general = (
+                codigo_filtrado is None
+                and (es_iteracion_dependencia or es_iteracion_notificaciones_25_45)
+            )
 
             ejecucion_exitosa = True
 
             try:
                 if not envios:
-                    if es_iteracion_dependencia:
+                    if ejecutar_historial_general:
                         _ejecutar_historial_sian()
                 else:
+                    if codigo_filtrado is not None:
+                        se_procesaron_envios_codigo = True
                     for envio in envios:
                         resultado, mensaje_error = _invocar_servicio(
                             envio.codigoseguimientomp, bandera_test
@@ -821,7 +887,7 @@ def procesar_envios(usar_test: Optional[bool] = None, dias: Optional[int] = None
                                 observacion_error,
                             )
 
-                    if es_iteracion_dependencia:
+                    if ejecutar_historial_general:
                         _ejecutar_historial_sian()
             except Exception as exc:
                 ejecucion_exitosa = False
@@ -844,8 +910,11 @@ def procesar_envios(usar_test: Optional[bool] = None, dias: Optional[int] = None
                     mensaje_iteracion,
                 )
 
-        if dias is not None:
+        if dias is not None and codigo_filtrado is None:
             _ejecutar_historial_sian()
+
+        if codigo_filtrado is not None and se_procesaron_envios_codigo:
+            _ejecutar_historial_sian(codigo_filtrado)
 
 
 def procesar_periodo(periodo: str, usar_test: Optional[bool] = None) -> None:
@@ -881,6 +950,14 @@ def _parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
             "actual menos la cantidad de días indicada"
         ),
     )
+    parser.add_argument(
+        "--codigodeseguimientomp",
+        type=str,
+        help=(
+            "Limita la ejecución al código de seguimiento especificado. "
+            "Solo se consulta ese registro y se sincroniza su historial."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -888,7 +965,11 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
     """Punto de entrada para ejecución por consola."""
 
     args = _parse_args(argv)
-    procesar_envios(usar_test=args.test, dias=args.dias)
+    procesar_envios(
+        usar_test=args.test,
+        dias=args.dias,
+        codigodeseguimientomp=args.codigodeseguimientomp,
+    )
 
 
 if __name__ == "__main__":
