@@ -423,6 +423,7 @@ def _obtener_envios(
           AND COALESCE(laststagesian, '') <> 'Finalizada'
           AND codigoseguimientomp IS NOT NULL
           AND codigoseguimientomp <> ''
+          AND feiw = 'NO'
     """
 
     if not iteracion.omitir_filtro_estados:
