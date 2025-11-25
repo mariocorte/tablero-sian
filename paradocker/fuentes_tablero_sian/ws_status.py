@@ -6,9 +6,51 @@ Ejemplo de uso desde la línea de comandos:
 
 import argparse
 import json
-from typing import Dict, Iterable, List
+from typing import Dict, Iterable, List, Optional
 
 import requests
+
+
+def _convertidor_payload() -> Dict[str, Dict[str, str]]:
+    """Valores de ejemplo para invocar el convertidor a PDF."""
+
+    return {
+        "SDTEntradaConvertidor": {
+            "pmovimientoid": "1",
+            "pactuacionid": "1",
+            "pdomicilioelectronicopj": "usuario@pj.gov.ar",
+            "path": "/tmp",
+        }
+    }
+
+
+def _insertar_documento_payload() -> Dict[str, Dict[str, str]]:
+    """Valores de ejemplo para invocar el gestor de documentos."""
+
+    return {
+        "sdtGestionDocumento": {
+            "sgdDocNombre": "SIAN_VL_EJEMPLO.pdf",
+            "sgdDocTipo": "pdf",
+            "sgdDocUsuarioAlta": "99999",
+            "sgdDocDocumentoBase64": "ZGF0b3MgZGUgZXplbXBsbyBkZWwgZG9jdW1lbnRv",
+            "sgdDocPublico": "true",
+            "sgdDocFisico": "true",
+            "sgdDocAppOrigen": "SIAN",
+        }
+    }
+
+
+def _incrustar_qr_payload() -> Dict[str, Dict[str, str]]:
+    """Valores de ejemplo para solicitar la incrustación de QR en PDF."""
+
+    return {
+        "cedulas": {
+            "pMovimientoId": "1",
+            "pActuacionId": "1",
+            "pDomicilioElectronicoPj": "usuario@pj.gov.ar",
+            "uidgestor": "123456",
+        }
+    }
 
 
 def webservice_endpoints(test: bool) -> Iterable[Dict[str, str]]:
@@ -32,16 +74,33 @@ def webservice_endpoints(test: bool) -> Iterable[Dict[str, str]]:
 
     incrustar_qr_url = "https://appweb.justiciasalta.gov.ar:8091/policia/api/cnotpolicia/incrustarqrpdf"
 
-    yield {"nombre": "Convertidor a PDF", "url": convertidor_url}
-    yield {"nombre": "InsertarDocumento Gestor", "url": gestor_url}
-    yield {"nombre": "Incrustar QR en PDF", "url": incrustar_qr_url}
+    yield {
+        "nombre": "Convertidor a PDF",
+        "url": convertidor_url,
+        "method": "POST",
+        "json": _convertidor_payload(),
+    }
+    yield {
+        "nombre": "InsertarDocumento Gestor",
+        "url": gestor_url,
+        "method": "POST",
+        "json": _insertar_documento_payload(),
+    }
+    yield {
+        "nombre": "Incrustar QR en PDF",
+        "url": incrustar_qr_url,
+        "method": "POST",
+        "json": _incrustar_qr_payload(),
+    }
 
 
-def verificar_webservice(url: str, method: str = "HEAD", timeout: int = 5) -> Dict[str, str]:
+def verificar_webservice(
+    url: str, method: str = "HEAD", timeout: int = 5, json_payload: Optional[Dict] = None
+) -> Dict[str, str]:
     """Ejecuta una llamada rápida para validar la disponibilidad de un web service."""
 
     try:
-        response = requests.request(method, url, timeout=timeout)
+        response = requests.request(method, url, timeout=timeout, json=json_payload)
         estado = "up" if response.ok else "error"
         detalle = f"{response.status_code} {response.reason}"
     except Exception as exc:  # pylint: disable=broad-except
@@ -51,12 +110,20 @@ def verificar_webservice(url: str, method: str = "HEAD", timeout: int = 5) -> Di
     return {"url": url, "estado": estado, "detalle": detalle}
 
 
-def chequear_todos_los_webservices(test: bool, method: str = "HEAD", timeout: int = 5) -> List[Dict[str, str]]:
+def chequear_todos_los_webservices(
+    test: bool, method: str = "HEAD", timeout: int = 5
+) -> List[Dict[str, str]]:
     """Obtiene el estado de todos los web services configurados para el entorno indicado."""
 
     resultados: List[Dict[str, str]] = []
     for endpoint in webservice_endpoints(test):
-        resultado = verificar_webservice(endpoint["url"], method=method, timeout=timeout)
+        endpoint_method = endpoint.get("method", method)
+        resultado = verificar_webservice(
+            endpoint["url"],
+            method=endpoint_method,
+            timeout=timeout,
+            json_payload=endpoint.get("json"),
+        )
         resultado["nombre"] = endpoint["nombre"]
         resultados.append(resultado)
     return resultados
