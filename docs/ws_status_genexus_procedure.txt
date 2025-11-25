@@ -1,0 +1,120 @@
+GeneXus procedure: WS_StatusGX
+==============================
+
+The following GeneXus procedure reproduces the logic from ``paradocker/fuentes_tablero_sian/ws_status.py``. It checks the availability of the three web services (convertidor a PDF, gestor de documentos, incrustar QR) using either the test or production endpoints. Copy the code below into a new GeneXus Procedure (e.g., ``WS_StatusGX``) and create the accompanying SDTs.
+
+Prerequisites
+-------------
+1) Define SDT ``WSResult`` with the following attributes:
+   * ``Name`` (VarChar)
+   * ``Url`` (VarChar)
+   * ``Status`` (VarChar)
+   * ``Detail`` (VarChar)
+
+2) Define SDT ``WSEndpoint`` with attributes:
+   * ``Name`` (VarChar)
+   * ``Url`` (VarChar)
+   * ``Method`` (VarChar)
+   * ``Payload`` (LongVarChar) — JSON body to send (optional)
+
+3) Define a collection: ``Collection<WSEndpoint>`` for internal use and ``Collection<WSResult>`` for the output.
+
+Parameters
+----------
+``Parm(in:&Test, in:&Method, in:&Timeout, out:&ResultJson);``
+
+* ``&Test``  : Boolean. True = use test endpoints; False = production.
+* ``&Method``: VarChar(10). Default method when an endpoint does not override it ("HEAD" suggested). 
+* ``&Timeout``: Numeric. Timeout in seconds for each request.
+* ``&ResultJson``: LongVarChar. JSON array with each web service status.
+
+Procedure source
+----------------
+```
+&Endpoints = new
+&Results   = new
+
+// 1) Build endpoint list
+&ConvertidorUrl = iif(&Test, "https://appweb.justiciasalta.gov.ar:8091/testnotisian/api/cnotpolicia/convertirNotifPoliciaaPDF", "https://appweb.justiciasalta.gov.ar:8091/policia/api/cnotpolicia/convertirNotifPoliciaaPDF")
+&GestorUrl      = iif(&Test, "http://10.19.240.200:8080/gestor/API/gestiondocumento/InsertarDocumento", "https://appintra.justiciasalta.gov.ar:8092/gestor/API/gestiondocumento/InsertarDocumento")
+&IncrustarQRUrl = "https://appweb.justiciasalta.gov.ar:8091/policia/api/cnotpolicia/incrustarqrpdf"
+
+&Endpoints.Add(new WSEndpoint)
+&Endpoints.Item(&Endpoints.Count).Name   = "Convertidor a PDF"
+&Endpoints.Item(&Endpoints.Count).Url    = &ConvertidorUrl
+&Endpoints.Item(&Endpoints.Count).Method = "POST"
+&Endpoints.Item(&Endpoints.Count).Payload = '{"SDTEntradaConvertidor":{"pmovimientoid":"1","pactuacionid":"1","pdomicilioelectronicopj":"usuario@pj.gov.ar","path":"/tmp"}}'
+
+&Endpoints.Add(new WSEndpoint)
+&Endpoints.Item(&Endpoints.Count).Name   = "InsertarDocumento Gestor"
+&Endpoints.Item(&Endpoints.Count).Url    = &GestorUrl
+&Endpoints.Item(&Endpoints.Count).Method = "POST"
+&Endpoints.Item(&Endpoints.Count).Payload = '{"sdtGestionDocumento":{"sgdDocNombre":"SIAN_VL_EJEMPLO.pdf","sgdDocTipo":"pdf","sgdDocUsuarioAlta":"99999","sgdDocDocumentoBase64":"ZGF0b3MgZGUgZXplbXBsbyBkZWwgZG9jdW1lbnRv","sgdDocPublico":"true","sgdDocFisico":"true","sgdDocAppOrigen":"SIAN"}}'
+
+&Endpoints.Add(new WSEndpoint)
+&Endpoints.Item(&Endpoints.Count).Name   = "Incrustar QR en PDF"
+&Endpoints.Item(&Endpoints.Count).Url    = &IncrustarQRUrl
+&Endpoints.Item(&Endpoints.Count).Method = "POST"
+&Endpoints.Item(&Endpoints.Count).Payload = '{"cedulas":{"pMovimientoId":"1","pActuacionId":"1","pDomicilioElectronicoPj":"usuario@pj.gov.ar","uidgestor":"123456"}}'
+
+// 2) Iterate over endpoints
+for &Endpoint in &Endpoints
+    &Http = new
+    &Http.Timeout = &Timeout * 1000  // seconds to milliseconds
+
+    &Http.ClearHeaders()
+    &Http.AddHeader("Content-Type", "application/json")
+
+    &EndpointMethod = &Endpoint.Method
+    if trim(&EndpointMethod) = "" then
+        &EndpointMethod = &Method
+    endif
+
+    &PayloadText = &Endpoint.Payload
+    if &EndpointMethod = "HEAD"
+        &Http.Execute("HEAD", &Endpoint.Url)
+    elseif &EndpointMethod = "GET"
+        &Http.Execute("GET", &Endpoint.Url)
+    else // POST by default
+        &Http.Execute("POST", &Endpoint.Url, &PayloadText)
+    endif
+
+    if &Http.ErrCode = 0
+        &StatusCode = &Http.StatusCode
+        &Reason     = &Http.ResponseStatusReasonPhrase
+        if &StatusCode >= 200 and &StatusCode < 300
+            &Estado = "up"
+        else
+            &Estado = "error"
+        endif
+        &Detalle = trim(str(&StatusCode,10,0)) + " " + &Reason
+    else
+        &Estado = "error"
+        &Detalle = trim(str(&Http.ErrCode,10,0)) + " " + &Http.ErrDescription
+    endif
+
+    &Result = new WSResult
+    &Result.Name   = &Endpoint.Name
+    &Result.Url    = &Endpoint.Url
+    &Result.Status = &Estado
+    &Result.Detail = &Detalle
+
+    &Results.Add(&Result)
+endfor
+
+// 3) Return JSON for UI consumption
+&ResultJson = &Results.ToJson()
+```
+
+Usage
+-----
+Call the procedure from your Web Panel user action, e.g.:
+```
+Event 'CheckWS'
+    &Test        = True  // or False for production
+    &Method      = "HEAD"
+    &Timeout     = 5
+    WS_StatusGX(&Test, &Method, &Timeout, &ResultJson)
+    // Present &ResultJson in the UI or deserialize it into a grid
+EndEvent
+```
