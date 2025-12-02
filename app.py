@@ -48,6 +48,7 @@ class QueryParams(BaseModel):
     hostiw: str
     portiw: str
     databaseiw: str
+    exp_id: Optional[int] = None
 
 
 classpath = "/code/app/ifxjdbc.jar"
@@ -158,7 +159,7 @@ async def root(params: QueryParams, background_tasks: BackgroundTasks):
             procesar_e_insertar(pgsql_config, panel_config, test, query_sql)
             print("Proceso completado Penal. Esperando próximo ciclo...")
             print(f"Iniciando proceso Violencia a las {datetime.now()}")
-            procesar_e_insertar_iw(pgsql_config, pgsql_iw, panel_config, test, queryvl)
+            procesar_e_insertar_iw(pgsql_config, pgsql_iw, panel_config, test, queryvl, params.exp_id)
             print("Proceso completado Violencia. Esperando próximo ciclo...")
         except Exception as exc:
             print(f"Error ejecutando proceso SIAN: {exc}")
@@ -244,6 +245,18 @@ def ejecutar_iw(pgsql_iw, queryvl):
     except Exception as e:
         print(f"Error al ejecutar IW: {e}")
         return []
+
+
+def preparar_query_iw(query_template: Optional[str], exp_id: Optional[int]) -> Optional[str]:
+    """Reemplaza el placeholder :exp_id por el valor recibido o NULL si no se envía."""
+
+    if not query_template:
+        return query_template
+
+    if exp_id is None:
+        return query_template.replace(":exp_id", "NULL")
+
+    return query_template.replace(":exp_id", str(exp_id))
 
 
 def es_base64(cadena):
@@ -493,11 +506,12 @@ def procesar_e_insertar(pgsql_config, panel_config, test, query_sql):
         print(f"Error general: {e}")
 
 
-def procesar_e_insertar_iw(pgsql_config, pgsql_iw, panel_config, test, queryvl):
+def procesar_e_insertar_iw(pgsql_config, pgsql_iw, panel_config, test, queryvl, exp_id=None):
     print("procesar e insertar iw")
     try:
         print(f"conexion: {pgsql_iw}")
-        rows = ejecutar_iw(pgsql_iw, queryvl)
+        query_ejecutable = preparar_query_iw(queryvl, exp_id)
+        rows = ejecutar_iw(pgsql_iw, query_ejecutable)
         if not rows:
             print("No se obtuvieron datos de Iurix Web.")
             return

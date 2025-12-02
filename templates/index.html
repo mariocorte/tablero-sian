@@ -130,6 +130,10 @@
             <label for="databaseiw">Base de datos IW</label>
             <input type="text" id="databaseiw" name="databaseiw" required>
         </div>
+        <div>
+            <label for="exp_id">ID de expediente (opcional)</label>
+            <input type="number" id="exp_id" name="exp_id" min="0" placeholder="Dejar vacío para todos">
+        </div>
         <button type="submit">Ejecutar proceso</button>
     </form>
 
@@ -145,6 +149,12 @@
         const data = Object.fromEntries(new FormData(form).entries());
         // convertir algunos campos a número para ajustarse al modelo esperado
         data.testservicios = parseInt(data.testservicios, 10);
+        if (data.exp_id === "") {
+            data.exp_id = null;
+        } else if (data.exp_id !== undefined) {
+            const parsedExpId = parseInt(data.exp_id, 10);
+            data.exp_id = Number.isNaN(parsedExpId) ? null : parsedExpId;
+        }
 
         try {
             const response = await fetch('/enviosian', {
