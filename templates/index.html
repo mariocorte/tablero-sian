@@ -68,28 +68,102 @@
 </head>
 <body>
 <div class="container">
-    <h1>Procesos SIAN</h1>
-    <form method="post" action="/run">
+    <h1>Procesar envíos SIAN</h1>
+    <p>Completa los parámetros de conexión y presiona "Ejecutar proceso" para lanzar el endpoint <code>/enviosian</code>.</p>
+    <form id="envio-form">
         <div>
-            <label for="tiempo">Tiempo entre ciclos (segundos)</label>
-            <input type="number" id="tiempo" name="tiempo" min="0" required value="{{ tiempo or '' }}">
+            <label for="testservicios">Modo</label>
+            <select id="testservicios" name="testservicios" required>
+                <option value="0">Producción</option>
+                <option value="1">Test</option>
+            </select>
         </div>
         <div>
-            <label for="test">Modo</label>
-            <select id="test" name="test" required>
-                <option value="0" {% if test == 0 %}selected{% endif %}>Producción</option>
-                <option value="1" {% if test == 1 %}selected{% endif %}>Test</option>
-            </select>
+            <label for="hostpgsql">Host PostgreSQL</label>
+            <input type="text" id="hostpgsql" name="hostpgsql" required placeholder="localhost">
+        </div>
+        <div>
+            <label for="portpgsql">Puerto PostgreSQL</label>
+            <input type="text" id="portpgsql" name="portpgsql" required placeholder="5432">
+        </div>
+        <div>
+            <label for="databasepgsql">Base de datos PostgreSQL</label>
+            <input type="text" id="databasepgsql" name="databasepgsql" required placeholder="iurixPj">
+        </div>
+        <div>
+            <label for="user">Usuario BD</label>
+            <input type="text" id="user" name="user" required>
+        </div>
+        <div>
+            <label for="password">Contraseña BD</label>
+            <input type="password" id="password" name="password" required>
+        </div>
+        <div>
+            <label for="userpanel">Usuario panel</label>
+            <input type="text" id="userpanel" name="userpanel" required>
+        </div>
+        <div>
+            <label for="passwordpanel">Contraseña panel</label>
+            <input type="password" id="passwordpanel" name="passwordpanel" required>
+        </div>
+        <div>
+            <label for="hostpanel">Host panel</label>
+            <input type="text" id="hostpanel" name="hostpanel" required>
+        </div>
+        <div>
+            <label for="portpanel">Puerto panel</label>
+            <input type="text" id="portpanel" name="portpanel" required>
+        </div>
+        <div>
+            <label for="databasepanel">Base de datos panel</label>
+            <input type="text" id="databasepanel" name="databasepanel" required>
+        </div>
+        <div>
+            <label for="hostiw">Host IW</label>
+            <input type="text" id="hostiw" name="hostiw" required>
+        </div>
+        <div>
+            <label for="portiw">Puerto IW</label>
+            <input type="text" id="portiw" name="portiw" required>
+        </div>
+        <div>
+            <label for="databaseiw">Base de datos IW</label>
+            <input type="text" id="databaseiw" name="databaseiw" required>
         </div>
         <button type="submit">Ejecutar proceso</button>
     </form>
 
-    {% if resultado %}
-        <div class="resultado{% if resultado.errores and resultado.errores > 0 %} error{% endif %}">
-            <strong>Resultado:</strong>
-            <pre>{{ resultado | tojson(indent=2) }}</pre>
-        </div>
-    {% endif %}
+    <div id="resultado" class="resultado" style="display:none;"></div>
 </div>
+<script>
+    const form = document.getElementById('envio-form');
+    const resultado = document.getElementById('resultado');
+
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        resultado.style.display = 'none';
+        const data = Object.fromEntries(new FormData(form).entries());
+        // convertir algunos campos a número para ajustarse al modelo esperado
+        data.testservicios = parseInt(data.testservicios, 10);
+
+        try {
+            const response = await fetch('/enviosian', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            });
+            const json = await response.json();
+            resultado.textContent = JSON.stringify(json, null, 2);
+            resultado.classList.toggle('error', json.errores && json.errores > 0);
+            resultado.style.display = 'block';
+        } catch (error) {
+            resultado.textContent = `Error al enviar la solicitud: ${error}`;
+            resultado.classList.add('error');
+            resultado.style.display = 'block';
+        }
+    });
+</script>
 </body>
 </html>

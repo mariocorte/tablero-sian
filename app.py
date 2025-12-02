@@ -1,6 +1,8 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from pydantic import BaseModel
 from fastapi import BackgroundTasks
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
 import psycopg2
 import os
 import base64
@@ -13,10 +15,22 @@ import xml.etree.ElementTree as ET
 from typing import Tuple, Optional  # ✅ agregado
 
 app = FastAPI()
+templates = Jinja2Templates(directory="templates")
 
 # Variables globales para cachear las consultas
 query_sql_cache: Optional[str] = None
 queryvl_cache: Optional[str] = None
+
+
+@app.get("/", response_class=HTMLResponse)
+async def index(request: Request):
+    """Página de inicio con el formulario web."""
+    return templates.TemplateResponse(
+        "index.html",
+        {
+            "request": request,
+        },
+    )
 
 # Modelo para recibir parámetros en la API
 class QueryParams(BaseModel):
