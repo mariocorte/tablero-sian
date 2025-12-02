@@ -13,6 +13,7 @@ from pathlib import Path
 import jaydebeapi
 import requests
 import json
+import re
 import xml.etree.ElementTree as ET
 from typing import Optional, Tuple, Dict, Any
 
@@ -222,8 +223,23 @@ def cargar_consulta(archivo):
         return None
 
 
+def limpiar_consulta_sql(query: Optional[str]) -> Optional[str]:
+    """Normaliza la consulta eliminando comentarios y espacios extra."""
+    if not query:
+        return None
+
+    query_sin_comentarios = re.sub(r"/\*.*?\*/", "", query, flags=re.DOTALL)
+    query_sin_comentarios = re.sub(r"--.*?(?=\r?\n|$)", "", query_sin_comentarios)
+
+    consulta_limpia = query_sin_comentarios.strip()
+    if consulta_limpia and not consulta_limpia.endswith(";"):
+        consulta_limpia += ";"
+    return consulta_limpia
+
+
 def ejecutar_sqlix(query_sql):
-    if not query_sql:
+    consulta = limpiar_consulta_sql(query_sql)
+    if not consulta:
         return []
     try:
         conn = jaydebeapi.connect(
@@ -233,7 +249,7 @@ def ejecutar_sqlix(query_sql):
             classpath
         )
         cursor = conn.cursor()
-        cursor.execute(query_sql)
+        cursor.execute(consulta)
         rows = cursor.fetchall()
         conn.close()
         return rows
@@ -244,12 +260,14 @@ def ejecutar_sqlix(query_sql):
 
 def ejecutar_iw(pgsql_iw, queryvl):
     print("ejecutar_iw")
-    if not queryvl:
+    consulta = limpiar_consulta_sql(queryvl)
+    print(f"queryvl: {consulta}")
+    if not consulta:
         return []
     try:
         with get_pg_connection(pgsql_iw) as conn:
             with conn.cursor() as cursor:
-                cursor.execute(queryvl)
+                cursor.execute(consulta)
                 rows = cursor.fetchall()
                 return rows
     except Exception as e:
