@@ -105,21 +105,44 @@ async def root(params: QueryParams, background_tasks: BackgroundTasks):
         "password": params.password,
     }
 
-    print(f"Iniciando proceso Penal a las {datetime.now()}")
-    procesar_e_insertar(pgsql_config, panel_config, test, query_sql)  # ✅ corregido
-    print("Proceso completado Penal. Esperando próximo ciclo...")
-    print(f"Iniciando proceso Violencia a las {datetime.now()}")
-    #print(f"queryvl: {queryvl}")
-    procesar_e_insertar_iw(pgsql_config, pgsql_iw, panel_config, test, queryvl)  # ✅ corregido
+    campos_vacios = [
+        nombre
+        for nombre, valor in {
+            "hostpgsql": params.hostpgsql,
+            "databasepgsql": params.databasepgsql,
+            "user": params.user,
+            "password": params.password,
+            "hostpanel": params.hostpanel,
+            "databasepanel": params.databasepanel,
+            "userpanel": params.userpanel,
+            "passwordpanel": params.passwordpanel,
+        }.items()
+        if not str(valor).strip()
+    ]
+    if campos_vacios:
+        return {
+            "mensaje": "Faltan datos obligatorios en la solicitud.",
+            "errores": len(campos_vacios),
+            "campos": campos_vacios,
+        }
 
-    # 🔹 Lanza las tareas en segundo plano
-    #background_tasks.add_task(procesar_e_insertar_iw, pgsql_config, pgsql_iw, panel_config, test, queryvl)
-    print("Proceso completado Violencia. Esperando próximo ciclo...")
+    def lanzar_proceso():
+        try:
+            print(f"Iniciando proceso Penal a las {datetime.now()}")
+            procesar_e_insertar(pgsql_config, panel_config, test, query_sql)
+            print("Proceso completado Penal. Esperando próximo ciclo...")
+            print(f"Iniciando proceso Violencia a las {datetime.now()}")
+            procesar_e_insertar_iw(pgsql_config, pgsql_iw, panel_config, test, queryvl)
+            print("Proceso completado Violencia. Esperando próximo ciclo...")
+        except Exception as exc:
+            print(f"Error ejecutando proceso SIAN: {exc}")
 
-    try:
-        return {"mensaje": "Proceso lanzado en segundo plano correctamente", "errores": 0}
-    except Exception as e:
-        return {"error": str(e)}
+    background_tasks.add_task(lanzar_proceso)
+
+    return {
+        "mensaje": "Proceso lanzado en segundo plano correctamente",
+        "errores": 0,
+    }
 
 
 # Función para cargar consulta SQL desde parametros
