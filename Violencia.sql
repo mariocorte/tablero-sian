@@ -107,4 +107,5 @@ WHERE D.dac_cod IN ('CEDPOL', 'CEDCIT', 'CEDCON', 'CEDURG')
     AND A.eac_id IN (6, 29)
     AND A.act_fecfir IS NOT NULL
     AND date_trunc('minute', A.act_fecfir) >= date_trunc('minute', CURRENT_TIMESTAMP - INTERVAL '14 days')
-    AND UA.es_enotif = 0;
+    AND UA.es_enotif = 0
+    AND (:exp_id IS NULL OR E.exp_id = :exp_id);
