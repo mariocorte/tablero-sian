@@ -126,6 +126,32 @@ async def root(params: QueryParams, background_tasks: BackgroundTasks):
             "campos": campos_vacios,
         }
 
+    def verificar_conexion(config: dict, nombre: str) -> Optional[str]:
+        """Intenta conectar a la base y devuelve un mensaje de error si falla."""
+        try:
+            conexion = psycopg2.connect(**config)
+            conexion.close()
+            return None
+        except Exception as exc:  # noqa: BLE001
+            return f"No se pudo conectar a {nombre}: {exc}"
+
+    errores_conexion = [
+        error
+        for error in (
+            verificar_conexion(pgsql_config, "PostgreSQL IURIX"),
+            verificar_conexion(panel_config, "Panel"),
+            verificar_conexion(pgsql_iw, "Iurix Web"),
+        )
+        if error is not None
+    ]
+
+    if errores_conexion:
+        return {
+            "mensaje": "No se pudo lanzar el proceso por errores de conexión.",
+            "errores": len(errores_conexion),
+            "detalles": errores_conexion,
+        }
+
     def lanzar_proceso():
         try:
             print(f"Iniciando proceso Penal a las {datetime.now()}")
