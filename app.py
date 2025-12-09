@@ -12,7 +12,7 @@ import jaydebeapi
 import requests
 import json
 import xml.etree.ElementTree as ET
-from typing import Tuple, Optional, Any  # ✅ agregado
+from typing import Tuple, Optional, Any, List  # ✅ agregado
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
@@ -75,6 +75,26 @@ def safe_int(value: Any, field_name: str, row_id: Any = "") -> int:
     except (TypeError, ValueError) as exc:  # noqa: BLE001
         fila_txt = f" (fila {row_id})" if row_id != "" else ""
         raise ValueError(f"Valor no numérico para {field_name}{fila_txt}: {value}") from exc
+
+
+def parse_int_or_skip(value: Any, field_name: str, row_id: Any, errores: List[str]) -> Optional[int]:
+    """Intenta extraer números desde un valor y devuelve None cuando no hay dígitos."""
+
+    raw = safe_strip(value)
+    if raw == "":
+        errores.append(f"Valor vacío para {field_name} (fila {row_id})")
+        return None
+
+    digits_only = "".join(char for char in raw if char.isdigit())
+    if digits_only == "":
+        errores.append(f"Valor no numérico para {field_name} (fila {row_id}): {raw}")
+        return None
+
+    try:
+        return int(digits_only)
+    except ValueError as exc:  # noqa: BLE001
+        errores.append(f"No se pudo convertir {field_name} (fila {row_id}): {raw}")
+        return None
 
 username = "cmayuda"
 password = "power177"
@@ -482,7 +502,10 @@ def procesar_e_insertar(pgsql_config, panel_config, test, query_sql):
                         valorarchivo = base64.b64encode(str(valorarchivo).encode('utf-8')).decode('utf-8')
                 pmovimientoid = safe_int(fila[0], "pmovimientoid")
                 pactuacionid = safe_int(fila[2], "pactuacionid", fila[0])
-                pnumero = safe_int(fila[5], "pnumero", fila[0])
+                pnumero = parse_int_or_skip(fila[5], "pnumero", fila[0], errores)
+                if pnumero is None:
+                    continue
+
                 panio = safe_int(fila[4], "panio", fila[0])
                 pactuacioniurix = safe_int(fila[1], "pactuacioniurix", fila[0])
                 irx_hca_numero = safe_int(fila[28], "irx_hca_numero", fila[0])
@@ -580,7 +603,10 @@ def procesar_e_insertar_iw(pgsql_config, pgsql_iw, panel_config, test, queryvl, 
                 valorarchivoactuacion = a_base64(fila[35])
                 pmovimientoid = safe_int(fila[0], "pmovimientoid")
                 pactuacionid = safe_int(fila[2], "pactuacionid", fila[0])
-                pnumero = safe_int(fila[4], "pnumero", fila[0])
+                pnumero = parse_int_or_skip(fila[4], "pnumero", fila[0], errores)
+                if pnumero is None:
+                    continue
+
                 panio = safe_int(fila[5], "panio", fila[0])
                 pactuacioniurix = safe_int(fila[1], "pactuacioniurix", fila[0])
                 irx_hca_numero = safe_int(fila[28], "irx_hca_numero", fila[0])
