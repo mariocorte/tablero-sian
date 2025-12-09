@@ -12,7 +12,7 @@ import jaydebeapi
 import requests
 import json
 import xml.etree.ElementTree as ET
-from typing import Tuple, Optional  # ✅ agregado
+from typing import Tuple, Optional, Any  # ✅ agregado
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
@@ -58,6 +58,13 @@ database_url = (
     "INFORMIXSERVER=scpenala;LOBCACHE=-1;"
     "JDBCTEMP=/tmp;ifxJDBCTEMP=/tmp;FREECLOBWITHRS=true"
 )
+
+
+def safe_strip(value: Any) -> str:
+    """Convierte valores a string y elimina espacios, devolviendo cadena vacía si es None."""
+    if value is None:
+        return ""
+    return str(value).strip()
 
 username = "cmayuda"
 password = "power177"
@@ -456,7 +463,7 @@ def procesar_e_insertar(pgsql_config, panel_config, test, query_sql):
         actualizar = True
         for fila in rows:
             try:
-                hora_audiencia = fila[20].strip().replace('.0', '').replace(' HS:00', ":00").replace('.', ':')
+                hora_audiencia = safe_strip(fila[20]).replace('.0', '').replace(' HS:00', ":00").replace('.', ':')
                 valorarchivo = fila[26]
                 if not es_base64(valorarchivo):
                     if isinstance(valorarchivo, bytes):
@@ -466,24 +473,24 @@ def procesar_e_insertar(pgsql_config, panel_config, test, query_sql):
                 datos_insertar = {
                     'pmovimientoid': int(fila[0]),
                     'pactuacionid': int(fila[2]),
-                    'pdomicilioelectronicopj': fila[22].strip(),
+                    'pdomicilioelectronicopj': safe_strip(fila[22]),
                     'penviocedulanotificacionfechahora': '0001-01-01 00:00:00.000',
                     'pfechayhora': hora_audiencia,
-                    'pfechahora': fila[6].strip() + " 00:00:00.0",
-                    'pdocumentotipoabreviatura': fila[3].strip(),
+                    'pfechahora': safe_strip(fila[6]) + " 00:00:00.0",
+                    'pdocumentotipoabreviatura': safe_strip(fila[3]),
                     'pnumero': int(fila[5]),
                     'panio': int(fila[4]),
-                    'pdescripcion': fila[16].strip(),
+                    'pdescripcion': safe_strip(fila[16]),
                     'pexpedienteid': 0,
                     'porganismoid': 0,
                     'ptipoexpedienteid': 0,
                     'pdependenciaenviopj': fila[9],
-                    'pdependenciaenvionombre': fila[11].strip(),
-                    'pdac_codigo': fila[24].strip(),
-                    'pdac_descr': fila[25].strip(),
+                    'pdependenciaenvionombre': safe_strip(fila[11]),
+                    'pdac_codigo': safe_strip(fila[24]),
+                    'pdac_descr': safe_strip(fila[25]),
                     'pdocumento': fila[17],
-                    'pdestinatario': fila[18].strip(),
-                    'pdirecciondestinatario': fila[19].strip(),
+                    'pdestinatario': safe_strip(fila[18]),
+                    'pdirecciondestinatario': safe_strip(fila[19]),
                     'pactuacionarchivo': valorarchivo,
                     'ecednpoliciatitulo': "CEDULA DE NOTIFICACION",
                     'ecednpoliciaobservaciones': fila[8],
@@ -493,16 +500,16 @@ def procesar_e_insertar(pgsql_config, panel_config, test, query_sql):
                     'ecednpoliciaidexterno': f"901{str(fila[21]).zfill(9)}",
                     'ecednpolicianombredeppol': fila[24],
                     'fechacreacion': datetime.now(),
-                    'ecednpoliciadesccausa': f"{fila[3].strip()} {fila[5]}/{fila[4]}",
+                    'ecednpoliciadesccausa': f"{safe_strip(fila[3])} {fila[5]}/{fila[4]}",
                     'parchivoactnombre': f"901{str(fila[21]).zfill(9)}.pdf",
                     'pactuacioniurix': int(fila[1]),
-                    'irx_tcc_codigo': fila[27].strip(),
+                    'irx_tcc_codigo': safe_strip(fila[27]),
                     'irx_hca_numero': int(fila[28]),
                     'irx_hca_anio': int(fila[29]),
-                    'irx_dac_codigo': fila[30].strip(),
+                    'irx_dac_codigo': safe_strip(fila[30]),
                     'irx_hac_numero': fila[31],
                     'penviocedulanotificacionexito': False,
-                    'fte_resolucion': fila[34].strip(),
+                    'fte_resolucion': safe_strip(fila[34]),
                     'denuncia_id': fila[35]
                 }
                 if ejecutarpaso("paso1", panel_config) or True:
@@ -556,24 +563,24 @@ def procesar_e_insertar_iw(pgsql_config, pgsql_iw, panel_config, test, queryvl, 
                 datos_insertar = {
                     'pmovimientoid': int(fila[0]),
                     'pactuacionid': int(fila[2]),
-                    'pdomicilioelectronicopj': str(fila[22]).strip(),
+                    'pdomicilioelectronicopj': safe_strip(fila[22]),
                     'penviocedulanotificacionfechahora': '0001-01-01 00:00:00.000',
                     'pfechayhora': hora_audiencia,
-                    'pfechahora': fila[6],
-                    'pdocumentotipoabreviatura': fila[3].strip(),
+                    'pfechahora': safe_strip(fila[6]),
+                    'pdocumentotipoabreviatura': safe_strip(fila[3]),
                     'pnumero': int(fila[4]),
                     'panio': int(fila[5]),
-                    'pdescripcion': fila[16].strip(),
+                    'pdescripcion': safe_strip(fila[16]),
                     'pexpedienteid': 0,
                     'porganismoid': 0,
                     'ptipoexpedienteid': 0,
                     'pdependenciaenviopj': fila[9],
-                    'pdependenciaenvionombre': fila[11].strip(),
-                    'pdac_codigo': fila[24].strip(),
-                    'pdac_descr': fila[25].strip(),
+                    'pdependenciaenvionombre': safe_strip(fila[11]),
+                    'pdac_codigo': safe_strip(fila[24]),
+                    'pdac_descr': safe_strip(fila[25]),
                     'pdocumento': fila[17],
-                    'pdestinatario': fila[18].strip(),
-                    'pdirecciondestinatario': fila[19].strip(),
+                    'pdestinatario': safe_strip(fila[18]),
+                    'pdirecciondestinatario': safe_strip(fila[19]),
                     'pactuacionarchivo': valorarchivo,
                     'ecednpoliciatitulo': "CEDULA DE NOTIFICACION",
                     'ecednpoliciaobservaciones': fila[8],
@@ -583,18 +590,18 @@ def procesar_e_insertar_iw(pgsql_config, pgsql_iw, panel_config, test, queryvl, 
                     'ecednpoliciaidexterno': f"900{str(fila[21]).zfill(9)}",
                     'ecednpolicianombredeppol': fila[24],
                     'fechacreacion': datetime.now(),
-                    'ecednpoliciadesccausa': f"{fila[3].strip()} {fila[5]}/{fila[4]}",
+                    'ecednpoliciadesccausa': f"{safe_strip(fila[3])} {fila[5]}/{fila[4]}",
                     'parchivoactnombre': f"900{str(fila[21]).zfill(9)}.pdf",
                     'pactuacioniurix': int(fila[1]),
-                    'irx_tcc_codigo': fila[27].strip(),
+                    'irx_tcc_codigo': safe_strip(fila[27]),
                     'irx_hca_numero': int(fila[28]),
                     'irx_hca_anio': int(fila[29]),
-                    'irx_dac_codigo': fila[30].strip(),
+                    'irx_dac_codigo': safe_strip(fila[30]),
                     'irx_hac_numero': fila[31],
                     'penviocedulanotificacionexito': False,
                     'archivoactuacion': valorarchivoactuacion,
                     'archivoactuacionid': f"{str(fila[34])}.pdf",
-                    'fte_resolucion': fila[36].strip(),
+                    'fte_resolucion': safe_strip(fila[36]),
                     'denuncia_id': fila[37]
 
                 }
