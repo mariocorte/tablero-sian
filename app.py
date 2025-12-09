@@ -269,6 +269,34 @@ def es_base64(cadena):
     return False
 
 
+def a_base64(valor: object) -> str:
+    """Convierte distintos tipos de dato a una cadena base64.
+
+    - Si ya es una cadena en base64, la retorna sin cambios.
+    - memoryview/bytes/bytearray se codifican directamente.
+    - Si la cadena parece hexadecimal, se intenta interpretar como tal.
+    - Caso contrario se codifica como UTF-8.
+    """
+
+    if isinstance(valor, memoryview):
+        valor = valor.tobytes()
+
+    if isinstance(valor, (bytes, bytearray)):
+        datos_bytes = bytes(valor)
+    elif isinstance(valor, str):
+        texto = valor.strip()
+        if es_base64(texto):
+            return texto
+        try:
+            datos_bytes = bytes.fromhex(texto)
+        except ValueError:
+            datos_bytes = texto.encode("utf-8")
+    else:
+        datos_bytes = str(valor).encode("utf-8")
+
+    return base64.b64encode(datos_bytes).decode("utf-8")
+
+
 def insertar_datos_enviocedula(conn, datos):
     try:
         with conn.cursor() as cursor:
@@ -522,19 +550,9 @@ def procesar_e_insertar_iw(pgsql_config, pgsql_iw, panel_config, test, queryvl, 
         for fila in rows:
             try:
                 hora_audiencia = fila[20]
-                datos_hex = fila[26]
-                datos_bytes = bytes(datos_hex)
-                datos_base64 = base64.b64encode(datos_bytes).decode('utf-8')
-                valorarchivo = datos_base64
-                datos_base64 = base64.b64encode(datos_bytes)
-                datos_base64_str = datos_base64.decode('utf-8')
-                valorarchivo = datos_base64_str
+                valorarchivo = a_base64(fila[26])
 
-                datos_hex = fila[35]
-                datos_bytes = bytes(datos_hex)
-                datos_base64 = base64.b64encode(datos_bytes)
-                datos_base64_str = datos_base64.decode('utf-8')
-                valorarchivoactuacion = datos_base64_str
+                valorarchivoactuacion = a_base64(fila[35])
                 datos_insertar = {
                     'pmovimientoid': int(fila[0]),
                     'pactuacionid': int(fila[2]),
