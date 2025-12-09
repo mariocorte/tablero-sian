@@ -12,7 +12,7 @@ import jaydebeapi
 import requests
 import json
 import xml.etree.ElementTree as ET
-from typing import Tuple, Optional, Any, List  # ✅ agregado
+from typing import Tuple, Optional, Any, List, Sequence  # ✅ agregado
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
@@ -95,6 +95,26 @@ def parse_int_or_skip(value: Any, field_name: str, row_id: Any, errores: List[st
     except ValueError as exc:  # noqa: BLE001
         errores.append(f"No se pudo convertir {field_name} (fila {row_id}): {raw}")
         return None
+
+
+def registrar_contexto_pnumero(fuente: str, fila: Sequence[Any], raw_value: Any, errores: List[str]) -> None:
+    """Agrega detalles de la fila cuando el pnumero no es numérico para facilitar el análisis."""
+
+    try:
+        contexto = {
+            "pmovimientoid": fila[0] if len(fila) > 0 else None,
+            "pactuacionid": fila[2] if len(fila) > 2 else None,
+            "documento": safe_strip(fila[3]) if len(fila) > 3 else "",
+            "anio": safe_strip(fila[4]) if len(fila) > 4 else "",
+            "numero_raw": safe_strip(raw_value),
+        }
+
+        if len(fila) > 21:
+            contexto["identificador_envio"] = fila[21]
+
+        errores.append(f"[{fuente}] Contexto fila con pnumero inválido: {contexto}")
+    except Exception as exc:  # noqa: BLE001
+        errores.append(f"[{fuente}] No se pudo registrar contexto de fila: {exc}")
 
 username = "cmayuda"
 password = "power177"
@@ -502,8 +522,10 @@ def procesar_e_insertar(pgsql_config, panel_config, test, query_sql):
                         valorarchivo = base64.b64encode(str(valorarchivo).encode('utf-8')).decode('utf-8')
                 pmovimientoid = safe_int(fila[0], "pmovimientoid")
                 pactuacionid = safe_int(fila[2], "pactuacionid", fila[0])
-                pnumero = parse_int_or_skip(fila[5], "pnumero", fila[0], errores)
+                raw_numero = fila[5]
+                pnumero = parse_int_or_skip(raw_numero, "pnumero", fila[0], errores)
                 if pnumero is None:
+                    registrar_contexto_pnumero("IURIX", fila, raw_numero, errores)
                     continue
 
                 panio = safe_int(fila[4], "panio", fila[0])
@@ -603,8 +625,10 @@ def procesar_e_insertar_iw(pgsql_config, pgsql_iw, panel_config, test, queryvl, 
                 valorarchivoactuacion = a_base64(fila[35])
                 pmovimientoid = safe_int(fila[0], "pmovimientoid")
                 pactuacionid = safe_int(fila[2], "pactuacionid", fila[0])
-                pnumero = parse_int_or_skip(fila[4], "pnumero", fila[0], errores)
+                raw_numero = fila[4]
+                pnumero = parse_int_or_skip(raw_numero, "pnumero", fila[0], errores)
                 if pnumero is None:
+                    registrar_contexto_pnumero("IURIX WEB", fila, raw_numero, errores)
                     continue
 
                 panio = safe_int(fila[5], "panio", fila[0])
