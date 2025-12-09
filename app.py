@@ -66,6 +66,16 @@ def safe_strip(value: Any) -> str:
         return ""
     return str(value).strip()
 
+
+def safe_int(value: Any, field_name: str, row_id: Any = "") -> int:
+    """Convierte valores a int informando claramente si no es posible hacerlo."""
+
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError) as exc:  # noqa: BLE001
+        fila_txt = f" (fila {row_id})" if row_id != "" else ""
+        raise ValueError(f"Valor no numérico para {field_name}{fila_txt}: {value}") from exc
+
 username = "cmayuda"
 password = "power177"
 driver_class = os.environ.get("DRIVER_CLASS", "com.informix.jdbc.IfxDriver")
@@ -470,16 +480,24 @@ def procesar_e_insertar(pgsql_config, panel_config, test, query_sql):
                         valorarchivo = base64.b64encode(valorarchivo).decode('utf-8')
                     else:
                         valorarchivo = base64.b64encode(str(valorarchivo).encode('utf-8')).decode('utf-8')
+                pmovimientoid = safe_int(fila[0], "pmovimientoid")
+                pactuacionid = safe_int(fila[2], "pactuacionid", fila[0])
+                pnumero = safe_int(fila[5], "pnumero", fila[0])
+                panio = safe_int(fila[4], "panio", fila[0])
+                pactuacioniurix = safe_int(fila[1], "pactuacioniurix", fila[0])
+                irx_hca_numero = safe_int(fila[28], "irx_hca_numero", fila[0])
+                irx_hca_anio = safe_int(fila[29], "irx_hca_anio", fila[0])
+
                 datos_insertar = {
-                    'pmovimientoid': int(fila[0]),
-                    'pactuacionid': int(fila[2]),
+                    'pmovimientoid': pmovimientoid,
+                    'pactuacionid': pactuacionid,
                     'pdomicilioelectronicopj': safe_strip(fila[22]),
                     'penviocedulanotificacionfechahora': '0001-01-01 00:00:00.000',
                     'pfechayhora': hora_audiencia,
                     'pfechahora': safe_strip(fila[6]) + " 00:00:00.0",
                     'pdocumentotipoabreviatura': safe_strip(fila[3]),
-                    'pnumero': int(fila[5]),
-                    'panio': int(fila[4]),
+                    'pnumero': pnumero,
+                    'panio': panio,
                     'pdescripcion': safe_strip(fila[16]),
                     'pexpedienteid': 0,
                     'porganismoid': 0,
@@ -502,10 +520,10 @@ def procesar_e_insertar(pgsql_config, panel_config, test, query_sql):
                     'fechacreacion': datetime.now(),
                     'ecednpoliciadesccausa': f"{safe_strip(fila[3])} {fila[5]}/{fila[4]}",
                     'parchivoactnombre': f"901{str(fila[21]).zfill(9)}.pdf",
-                    'pactuacioniurix': int(fila[1]),
+                    'pactuacioniurix': pactuacioniurix,
                     'irx_tcc_codigo': safe_strip(fila[27]),
-                    'irx_hca_numero': int(fila[28]),
-                    'irx_hca_anio': int(fila[29]),
+                    'irx_hca_numero': irx_hca_numero,
+                    'irx_hca_anio': irx_hca_anio,
                     'irx_dac_codigo': safe_strip(fila[30]),
                     'irx_hac_numero': fila[31],
                     'penviocedulanotificacionexito': False,
@@ -560,16 +578,24 @@ def procesar_e_insertar_iw(pgsql_config, pgsql_iw, panel_config, test, queryvl, 
                 valorarchivo = a_base64(fila[26])
 
                 valorarchivoactuacion = a_base64(fila[35])
+                pmovimientoid = safe_int(fila[0], "pmovimientoid")
+                pactuacionid = safe_int(fila[2], "pactuacionid", fila[0])
+                pnumero = safe_int(fila[4], "pnumero", fila[0])
+                panio = safe_int(fila[5], "panio", fila[0])
+                pactuacioniurix = safe_int(fila[1], "pactuacioniurix", fila[0])
+                irx_hca_numero = safe_int(fila[28], "irx_hca_numero", fila[0])
+                irx_hca_anio = safe_int(fila[29], "irx_hca_anio", fila[0])
+
                 datos_insertar = {
-                    'pmovimientoid': int(fila[0]),
-                    'pactuacionid': int(fila[2]),
+                    'pmovimientoid': pmovimientoid,
+                    'pactuacionid': pactuacionid,
                     'pdomicilioelectronicopj': safe_strip(fila[22]),
                     'penviocedulanotificacionfechahora': '0001-01-01 00:00:00.000',
                     'pfechayhora': hora_audiencia,
                     'pfechahora': safe_strip(fila[6]),
                     'pdocumentotipoabreviatura': safe_strip(fila[3]),
-                    'pnumero': int(fila[4]),
-                    'panio': int(fila[5]),
+                    'pnumero': pnumero,
+                    'panio': panio,
                     'pdescripcion': safe_strip(fila[16]),
                     'pexpedienteid': 0,
                     'porganismoid': 0,
@@ -592,10 +618,10 @@ def procesar_e_insertar_iw(pgsql_config, pgsql_iw, panel_config, test, queryvl, 
                     'fechacreacion': datetime.now(),
                     'ecednpoliciadesccausa': f"{safe_strip(fila[3])} {fila[5]}/{fila[4]}",
                     'parchivoactnombre': f"900{str(fila[21]).zfill(9)}.pdf",
-                    'pactuacioniurix': int(fila[1]),
+                    'pactuacioniurix': pactuacioniurix,
                     'irx_tcc_codigo': safe_strip(fila[27]),
-                    'irx_hca_numero': int(fila[28]),
-                    'irx_hca_anio': int(fila[29]),
+                    'irx_hca_numero': irx_hca_numero,
+                    'irx_hca_anio': irx_hca_anio,
                     'irx_dac_codigo': safe_strip(fila[30]),
                     'irx_hac_numero': fila[31],
                     'penviocedulanotificacionexito': False,
