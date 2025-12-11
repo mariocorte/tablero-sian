@@ -210,12 +210,12 @@ async def root(params: QueryParams, background_tasks: BackgroundTasks):
             "detalles": errores_conexion,
         }
 
-        def lanzar_proceso():
-            try:
-                procesar_e_insertar(pgsql_config, panel_config, test, query_sql)
-                procesar_e_insertar_iw(pgsql_config, pgsql_iw, panel_config, test, queryvl, params.exp_id)
-            except Exception as exc:
-                print(f"Error ejecutando proceso SIAN: {exc}")
+    def lanzar_proceso():
+        try:
+            procesar_e_insertar(pgsql_config, panel_config, test, query_sql)
+            procesar_e_insertar_iw(pgsql_config, pgsql_iw, panel_config, test, queryvl, params.exp_id)
+        except Exception as exc:
+            print(f"Error ejecutando proceso SIAN: {exc}")
 
     background_tasks.add_task(lanzar_proceso)
 
