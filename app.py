@@ -377,7 +377,7 @@ def insertar_datos_enviocedula(conn, datos):
                 cursor.execute(query, datos)
                 if cursor.rowcount > 0:
                     conn.commit()
-                return True
+                    return True
                 else:
                     return False
             except Exception as er:
@@ -865,13 +865,13 @@ def ejecutar_control_cedulas(pgsql_config, pmovimientoid, pactuacionid, pdomicil
             pactuacionid = registro[1]
             pdomicilioelectronicopj = registro[2]
             root = ET.fromstring(registro[5])
-                for child in root:
-                    for subchild in child:
-                        if subchild.tag == "{http://tempuri.org/}CodigosSeguimiento":
-                            for codigo in subchild:
-                                update_query = f"UPDATE enviocedulanotificacionpolicia SET codigoseguimientomp = '{codigo.text}' WHERE pmovimientoid = {pmovimientoid} and pactuacionid = {pactuacionid} and pdomicilioelectronicopj = '{pdomicilioelectronicopj}'"
-                                cursor.execute(update_query)
-                                conexion.commit()
+            for child in root:
+                for subchild in child:
+                    if subchild.tag == "{http://tempuri.org/}CodigosSeguimiento":
+                        for codigo in subchild:
+                            update_query = f"UPDATE enviocedulanotificacionpolicia SET codigoseguimientomp = '{codigo.text}' WHERE pmovimientoid = {pmovimientoid} and pactuacionid = {pactuacionid} and pdomicilioelectronicopj = '{pdomicilioelectronicopj}'"
+                            cursor.execute(update_query)
+                            conexion.commit()
 
     except Exception as e:
         print("tabla con errores")
