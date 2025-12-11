@@ -210,16 +210,12 @@ async def root(params: QueryParams, background_tasks: BackgroundTasks):
             "detalles": errores_conexion,
         }
 
-    def lanzar_proceso():
-        try:
-            print(f"Iniciando proceso Penal a las {datetime.now()}")
-            procesar_e_insertar(pgsql_config, panel_config, test, query_sql)
-            print("Proceso completado Penal. Esperando próximo ciclo...")
-            print(f"Iniciando proceso Violencia a las {datetime.now()}")
-            procesar_e_insertar_iw(pgsql_config, pgsql_iw, panel_config, test, queryvl, params.exp_id)
-            print("Proceso completado Violencia. Esperando próximo ciclo...")
-        except Exception as exc:
-            print(f"Error ejecutando proceso SIAN: {exc}")
+        def lanzar_proceso():
+            try:
+                procesar_e_insertar(pgsql_config, panel_config, test, query_sql)
+                procesar_e_insertar_iw(pgsql_config, pgsql_iw, panel_config, test, queryvl, params.exp_id)
+            except Exception as exc:
+                print(f"Error ejecutando proceso SIAN: {exc}")
 
     background_tasks.add_task(lanzar_proceso)
 
@@ -242,7 +238,6 @@ def cargar_consulta(archivo):
     }
     query = f"""SELECT parametroblobfile FROM parametro \
              WHERE parametronombre = '{archivo}';"""
-    print(query)
     connlp = None
     try:
         connlp = psycopg2.connect(**pgsql_config)
@@ -286,10 +281,7 @@ def ejecutar_sqlix(query_sql):
 
 
 def ejecutar_iw(pgsql_iw, queryvl):
-    print("ejecutar_iw")
-    print(f"queryvl: {queryvl}")
     if not queryvl:
-        print("No encontro nada")
         return []
     try:
         conn = psycopg2.connect(**pgsql_iw)
@@ -297,7 +289,6 @@ def ejecutar_iw(pgsql_iw, queryvl):
         cursor.execute(queryvl)
         rows = cursor.fetchall()
         conn.close()
-        print("si encontro filas")
         return rows
     except Exception as e:
         print(f"Error al ejecutar IW: {e}")
@@ -386,8 +377,7 @@ def insertar_datos_enviocedula(conn, datos):
                 cursor.execute(query, datos)
                 if cursor.rowcount > 0:
                     conn.commit()
-                    print(f"Datos insertados para pmovimientoid: {datos['pactuacionid']}")
-                    return True
+                return True
                 else:
                     return False
             except Exception as er:
@@ -417,7 +407,6 @@ def ejecutar_convertidor_pdf(pmovimientoid, pactuacionid, pdomicilioelectronicop
     try:
         response = requests.post(url, headers=headers, json=payload)
         if response.status_code == 200:
-            print("✅ Conversión a PDF exitosa.")
             return True
         else:
             print(f"Error en conversión a PDF: {response.status_code}, {response.text}")
@@ -448,7 +437,6 @@ def ejecutar_envio_cedulas(pgsql_config, cantidad, urlsian, pmovimientoid, pactu
 def ejecutarpaso(proceso, panel_config):
     query = f"""SELECT procesosatid,procesosatnombre,procesosatdescripcion,procesosatultiej,procesosatprxej FROM procesosat \
         where procesosatnombre = '{proceso}' ;"""
-    print(f"query: {query}")
     try:
         ejecutarpaso = False
         connlp = psycopg2.connect(**panel_config)
@@ -479,7 +467,6 @@ def ejecutarpaso(proceso, panel_config):
 
 def registrar_paso(proceso, codigo_proceso, panel_config):
     connrp = psycopg2.connect(**panel_config)
-    print("Entro a registrar paso")
     try:
         with connrp.cursor() as cursor:
             ahora = datetime.now()
@@ -493,7 +480,6 @@ def registrar_paso(proceso, codigo_proceso, panel_config):
             """
             cursor.execute(query)
             connrp.commit()
-            print(f"Datos de procesos actualizados {proceso} a hrs: {ahora}")
     except Exception as e:
         print(f"Error al registrar paso {e}")
 
@@ -501,12 +487,10 @@ def registrar_paso(proceso, codigo_proceso, panel_config):
 
 
 def procesar_e_insertar(pgsql_config, panel_config, test, query_sql):
-    print("Procesar e insertar IURIX")
     impix = 0
     try:
         rows = ejecutar_sqlix(query_sql)
         if not rows:
-            print("No se obtuvieron datos de Informix.")
             return
         conn = psycopg2.connect(**pgsql_config)
         errores = []
@@ -582,38 +566,31 @@ def procesar_e_insertar(pgsql_config, panel_config, test, query_sql):
                         pactuacionid = datos_insertar['pactuacionid']
                         pdomicilioelectronicopj = datos_insertar['pdomicilioelectronicopj']
                         if ejecutar_convertidor_pdf(pmovimientoid, pactuacionid, pdomicilioelectronicopj, './static/apiconsumo/cnotpolicia', test):
-                            if test:
-                                print("test")
-                            else:
-                                print("prod")
+                            print(
+                                f"Registro ok - pmovimientoid: {pmovimientoid}, "
+                                f"pactuacionid: {pactuacionid}, "
+                                f"pdomicilioelectronicopj: {pdomicilioelectronicopj}"
+                            )
             except Exception as e:
                 errores.append(f"Error al procesar fila {fila[0]}: {e}")
                 print(f"Error al procesar fila {fila[0]}: {e}")
 
         if actualizar:
-            print(f"conexion: {panel_config}")
             registrar_paso("paso1", 1, panel_config)
         conn.close()
         if errores:
-            print("Algunos registros no pudieron procesarse:")
             for error in errores:
                 print(error)
-        else:
-            print("Todos los registros procesados correctamente.")
     except Exception as e:
         print(f"Error general: {e}")
 
 
 def procesar_e_insertar_iw(pgsql_config, pgsql_iw, panel_config, test, queryvl, exp_id=None):
-    print("procesar e insertar iw")
     try:
-        print(f"conexion: {pgsql_iw}")
         query_ejecutable = preparar_query_iw(queryvl, exp_id)
         rows = ejecutar_iw(pgsql_iw, query_ejecutable)
         if not rows:
-            print("No se obtuvieron datos de Iurix Web.")
             return
-        print("Si hay filas")
         conn = psycopg2.connect(**pgsql_config)
         errores = []
         actualizar = False
@@ -686,7 +663,6 @@ def procesar_e_insertar_iw(pgsql_config, pgsql_iw, panel_config, test, queryvl, 
                     if insertar_datos_enviocedula(conn, datos_insertar):
                         resultado = insertar_documento(valorarchivoactuacion, f"900{str(fila[21]).zfill(9)}.pdf", 8880, test)
                         if resultado:
-                            print("Respuesta del webservice:", json.dumps(resultado, indent=2))
                             rs = json.dumps(resultado, indent=2)
                             datadelws = json.loads(rs)
 
@@ -697,13 +673,10 @@ def procesar_e_insertar_iw(pgsql_config, pgsql_iw, panel_config, test, queryvl, 
 
                             resultado = insertar_documento(valorarchivo, f"{str(fila[34])}.pdf", 8880, test)
                             if resultado:
-                                print("Respuesta del webservice:", json.dumps(resultado, indent=2))
                                 rs = json.dumps(resultado, indent=2)
                                 datadelws = json.loads(rs)
-                                print(f"Previa:{datadelws}")
                                 if datadelws.get('resultado', False):
                                     sgdocidc = datadelws.get('sgdDocId')
-                                    print(f"sgdod:{sgdocid}")
                                     if sgdocidc is not None:
                                         grabarcedencedulasconqr(int(fila[0]), int(fila[2]), str(fila[22]).strip(), sgdocidc, pgsql_config)
                                         formularioqr = obtener_formulario_qr(int(fila[0]), int(fila[2]), str(fila[22]).strip(), sgdocid, pgsql_config, urlpj='https://appweb.justiciasalta.gov.ar:8091/policia/api/cnotpolicia/incrustarqrpdf')
@@ -712,20 +685,21 @@ def procesar_e_insertar_iw(pgsql_config, pgsql_iw, panel_config, test, queryvl, 
                         pmovimientoid = datos_insertar['pmovimientoid']
                         pactuacionid = datos_insertar['pactuacionid']
                         pdomicilioelectronicopj = datos_insertar['pdomicilioelectronicopj']
+                        print(
+                            f"Registro ok - pmovimientoid: {pmovimientoid}, "
+                            f"pactuacionid: {pactuacionid}, "
+                            f"pdomicilioelectronicopj: {pdomicilioelectronicopj}"
+                        )
             except Exception as e:
                 errores.append(f"Error al procesar fila {fila[1]}: {e}")
                 print(f"Error al procesar fila {fila[1]}: {e}")
 
         if actualizar:
-            print(f"conexion: {panel_config}")
             registrar_paso("paso21", 21, panel_config)
         conn.close()
         if errores:
-            print("Algunos registros no pudieron procesarse:")
             for error in errores:
                 print(error)
-        else:
-            print("Todos los registros procesados correctamente.")
     except Exception as e:
         print(f"Error general: {e}")
 
@@ -763,14 +737,13 @@ def grabarcedencedulasconqr(pmovimientoid, pactuacionid, pdomicilioelectronicopj
         with connrp.cursor() as cursor:
             ahora = datetime.now()
             query = f"""
-            update cedulasconcodigoqr 
+            update cedulasconcodigoqr
             set uidgestorcedula = '{sgdocid}'
             where pmovimientoid = {pmovimientoid} and
             pactuacionid = {pactuacionid} and
             pdomicilioelectronicopj = '{pdomicilioelectronicopj}'         ;
             """
             cursor.execute(query)
-            print(f"Datos generados en tabla de qrs")
             connrp.commit()
     except Exception as e:
         print(f"Error al registrar paso {e}")
@@ -787,14 +760,12 @@ def grabarcedulasconqr(pmovimientoid, pactuacionid, pdomicilioelectronicopj, sgd
             insert into cedulasconcodigoqr (pmovimientoid,pactuacionid,pdomicilioelectronicopj,uidgestor) values ({pmovimientoid},{pactuacionid},'{pdomicilioelectronicopj}','{sgdocid}')         ;
             """
             cursor.execute(query)
-            print(f"Datos generados en tabla de qrs")
             connrp.commit()
     except Exception as e:
         print(f"Error al registrar paso {e}")
 
 
 def obtener_formulario_qr(pmovimientoid, pactuacionid, pdomicilioelectronicopj, sgdocid, pgsql_config, urlpj):
-    print("Ingrese a obtener_formulario_qr")
     connrp = psycopg2.connect(**pgsql_config)
     cursor = connrp.cursor()
     payload = {
@@ -807,11 +778,7 @@ def obtener_formulario_qr(pmovimientoid, pactuacionid, pdomicilioelectronicopj, 
     }
     headers = {'Content-Type': 'application/json'}
     try:
-        print("Enviando solicitud QR...")
         response = requests.post(urlpj, headers=headers, json=payload)
-
-        print(f"Código de estado: {response.status_code}")
-        print(f"Contenido de la respuesta: {response.text}")
 
         if response.status_code == 200:
             json_response = response.json()
@@ -820,8 +787,6 @@ def obtener_formulario_qr(pmovimientoid, pactuacionid, pdomicilioelectronicopj, 
 
             if errores is not None:
                 raise Exception(f"Errores reportados: {errores}")
-
-            print("✅ La tarea de envío de cédulas se completó con éxito.")
 
             fqr = json.dumps(json_response, indent=2)
 
@@ -837,20 +802,17 @@ def obtener_formulario_qr(pmovimientoid, pactuacionid, pdomicilioelectronicopj, 
                 cursor = connrp.cursor()
                 cursor.execute(updateqr)
                 connrp.commit()
-                print("paso1")
                 insertadjuntos = f"""
-                insert into adjuntospolicia  (pmovimientoid, pactuacionid, pdomicilioelectronicopj ,adjuntospolicianombre,adjuntospoliciabase64) 
-                values({pmovimientoid},{pactuacionid},'{pdomicilioelectronicopj}',(select parchivoactnombre from enviocedulanotificacionpolicia en where 
-                                en.pmovimientoid = {pmovimientoid} and
-                                en.pactuacionid = {pactuacionid} and
-                                en.pdomicilioelectronicopj = '{pdomicilioelectronicopj}'), '{formularioqr}')"""
+                insert into adjuntospolicia  (pmovimientoid, pactuacionid, pdomicilioelectronicopj ,adjuntospolicianombre,adjuntospoliciabase64)
+                values({pmovimientoid},{pactuacionid},'{pdomicilioelectronicopj}',(select parchivoactnombre from enviocedulanotificacionpolicia en where
+                                    en.pmovimientoid = {pmovimientoid} and
+                                    en.pactuacionid = {pactuacionid} and
+                                    en.pdomicilioelectronicopj = '{pdomicilioelectronicopj}'), '{formularioqr}')"""
 
                 connrp = psycopg2.connect(**pgsql_config)
                 cursor = connrp.cursor()
                 cursor.execute(insertadjuntos)
                 connrp.commit()
-
-                print("paso2")
                 updateec = f"""
                 update enviocedulanotificacionpolicia set pactuacionarchivo = '{formularioqr}' where pmovimientoid = {pmovimientoid} and pactuacionid = {pactuacionid} and pdomicilioelectronicopj = '{pdomicilioelectronicopj}'         ;
                 """
@@ -858,8 +820,6 @@ def obtener_formulario_qr(pmovimientoid, pactuacionid, pdomicilioelectronicopj, 
                 connrp = psycopg2.connect(**pgsql_config)
                 cursor = connrp.cursor()
                 cursor.execute(updateec)
-
-                print("paso 3")
 
                 connrp.commit()
 
@@ -905,17 +865,13 @@ def ejecutar_control_cedulas(pgsql_config, pmovimientoid, pactuacionid, pdomicil
             pactuacionid = registro[1]
             pdomicilioelectronicopj = registro[2]
             root = ET.fromstring(registro[5])
-            for child in root:
-                for subchild in child:
-                    if subchild.tag == "{http://tempuri.org/}CodigosSeguimiento":
-                        for codigo in subchild:
-                            print(f"{registro[26]}  Codigo: {codigo.text}")
-                            update_query = f"UPDATE enviocedulanotificacionpolicia SET codigoseguimientomp = '{codigo.text}' WHERE pmovimientoid = {pmovimientoid} and pactuacionid = {pactuacionid} and pdomicilioelectronicopj = '{pdomicilioelectronicopj}'"
-                            print(update_query)
-                            cursor.execute(update_query)
-                            conexion.commit()
-
-        print("control 1 ok")
+                for child in root:
+                    for subchild in child:
+                        if subchild.tag == "{http://tempuri.org/}CodigosSeguimiento":
+                            for codigo in subchild:
+                                update_query = f"UPDATE enviocedulanotificacionpolicia SET codigoseguimientomp = '{codigo.text}' WHERE pmovimientoid = {pmovimientoid} and pactuacionid = {pactuacionid} and pdomicilioelectronicopj = '{pdomicilioelectronicopj}'"
+                                cursor.execute(update_query)
+                                conexion.commit()
 
     except Exception as e:
         print("tabla con errores")
