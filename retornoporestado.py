@@ -49,17 +49,27 @@ def _obtener_notificaciones_por_estado(
     """Devuelve las notificaciones cuyo último estado coincide con el objetivo."""
 
     consulta = """
-        SELECT DISTINCT ON (TRIM(codigoseguimientomp))
-            TRIM(codigoseguimientomp) AS codigo_seguimiento,
+        SELECT
+            codigo_seguimiento,
             pmovimientoid,
             pactuacionid,
             pdomicilioelectronicopj,
             notpolhistoricompfecha,
             notpolhistoricompestado
-        FROM notpolhistoricomp
-        WHERE codigoseguimientomp IS NOT NULL
-          AND TRIM(codigoseguimientomp) <> ''
-        ORDER BY TRIM(codigoseguimientomp), notpolhistoricompfecha DESC NULLS LAST
+        FROM (
+            SELECT DISTINCT ON (TRIM(codigoseguimientomp))
+                TRIM(codigoseguimientomp) AS codigo_seguimiento,
+                pmovimientoid,
+                pactuacionid,
+                pdomicilioelectronicopj,
+                notpolhistoricompfecha,
+                notpolhistoricompestado
+            FROM notpolhistoricomp
+            WHERE codigoseguimientomp IS NOT NULL
+              AND TRIM(codigoseguimientomp) <> ''
+            ORDER BY TRIM(codigoseguimientomp), notpolhistoricompfecha DESC NULLS LAST
+        ) AS ultimos
+        WHERE notpolhistoricompfecha::date < CURRENT_DATE
     """
 
     with conn_pg.cursor(cursor_factory=extras.DictCursor) as cursor:
@@ -98,13 +108,15 @@ def _contar_por_estado(conn_pg: psycopg2.extensions.connection, estado_objetivo:
         FROM (
             SELECT DISTINCT ON (TRIM(codigoseguimientomp))
                 TRIM(codigoseguimientomp) AS codigo_seguimiento,
-                COALESCE(notpolhistoricompestado, '') AS estado
+                COALESCE(notpolhistoricompestado, '') AS estado,
+                notpolhistoricompfecha
             FROM notpolhistoricomp
             WHERE codigoseguimientomp IS NOT NULL
               AND TRIM(codigoseguimientomp) <> ''
             ORDER BY TRIM(codigoseguimientomp), notpolhistoricompfecha DESC NULLS LAST
         ) AS ultimos
-        WHERE LOWER(estado) = LOWER(%s);
+        WHERE LOWER(estado) = LOWER(%s)
+          AND notpolhistoricompfecha::date < CURRENT_DATE;
     """
 
     with conn_pg.cursor() as cursor:
