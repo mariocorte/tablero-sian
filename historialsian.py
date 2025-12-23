@@ -501,6 +501,56 @@ def _formatear_fecha_estado(fecha_estado: Optional[Union[str, datetime]]) -> str
     return "Sin fecha"
 
 
+def _estado_finalizado(estado_texto: str) -> bool:
+    return estado_texto.upper() in (
+        "ENTREGADA",
+        "NO ENTREGADA",
+        "DESCARTADA",
+        "FINALIZADA",
+    )
+
+
+def _actualizar_envio_por_codigo(
+    cursor: psycopg2.extensions.cursor,
+    estado_texto: str,
+    fecha_estado: Optional[Union[str, datetime]],
+    codigo_seguimiento: str,
+) -> int:
+    update_query = """
+        UPDATE enviocedulanotificacionpolicia
+        SET laststagesian = %s,
+            fechalaststate = %s,
+            finsian = %s
+        WHERE codigoseguimientomp = %s
+    """
+    cursor.execute(
+        update_query,
+        (estado_texto, fecha_estado, _estado_finalizado(estado_texto), codigo_seguimiento),
+    )
+    SUMMARY.add(
+        "enviocedulanotificacionpolicia",
+        "modificados",
+        cursor.rowcount,
+    )
+    return cursor.rowcount
+
+
+def _obtener_estado_mas_reciente(
+    estados: Iterable[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    estados_lista = list(estados)
+    if not estados_lista:
+        return None
+
+    def _clave_estado(estado: Dict[str, Any]) -> datetime:
+        fecha = _normalizar_fecha_para_comparacion(
+            estado.get("fecha") or estado.get("fecha_raw")
+        )
+        return fecha or datetime.min
+
+    return max(estados_lista, key=_clave_estado)
+
+
 def grabar_historico(
     estado,
     fecha_estado,
@@ -519,32 +569,11 @@ def grabar_historico(
             with conexion.cursor() as cursor:
                 estado_texto = estado or ""
                 fecha_estado_texto = _formatear_fecha_estado(fecha_estado)
-
-                if estado_texto.upper() in (
-                    "ENTREGADA",
-                    "NO ENTREGADA",
-                    "DESCARTADA",
-                    "FINALIZADA",
-                ):
-                    finsian = True
-                else:
-                    finsian = False
-
-                update_query = """
-                    UPDATE enviocedulanotificacionpolicia
-                    SET laststagesian = %s,
-                        fechalaststate = %s,
-                        finsian = %s
-                    WHERE codigoseguimientomp = %s
-                """
-                cursor.execute(
-                    update_query,
-                    (estado_texto, fecha_estado, finsian, CODIGO_SEGUIMIENTO),
-                )
-                SUMMARY.add(
-                    "enviocedulanotificacionpolicia",
-                    "modificados",
-                    cursor.rowcount,
+                _actualizar_envio_por_codigo(
+                    cursor,
+                    estado_texto,
+                    fecha_estado,
+                    CODIGO_SEGUIMIENTO,
                 )
                 conexion.commit()
                 _log_step(
@@ -774,6 +803,17 @@ def _guardar_historial_notpol(
                     if cursor.rowcount:
                         insertados += 1
                         claves_existentes.add(clave)
+
+                if insertados:
+                    ultimo_estado = _obtener_estado_mas_reciente(estados)
+                    if ultimo_estado is not None:
+                        _actualizar_envio_por_codigo(
+                            cursor,
+                            (ultimo_estado.get("estado") or ""),
+                            ultimo_estado.get("fecha_raw")
+                            or ultimo_estado.get("fecha"),
+                            CODIGO_SEGUIMIENTO,
+                        )
             conexion.commit()
             if insertados:
                 SUMMARY.add("notpolhistoricomp", "agregados", insertados)
@@ -877,4 +917,3 @@ if __name__ == "__main__":
 
 
 # Recorrer el XML
-
