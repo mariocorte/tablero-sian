@@ -223,8 +223,8 @@ def _imprimir_resultado_en_consola(
                 return xml_texto
 
     xml_legible = formateador(resultado.xml_respuesta)
-    print(f"Código de seguimiento: {notificacion.codigo_seguimiento}")
-    print(f"XML devuelto:\n{xml_legible}")
+    print(f"CODIGODESEGUIMIENTOMP: {notificacion.codigo_seguimiento}")
+    print(f"XML amigable:\n{xml_legible}\n")
 
 
 def procesar_por_estado(
@@ -250,11 +250,7 @@ def procesar_por_estado(
             estado_normalizado,
         )
 
-        _log_step(
-            "procesar_por_estado",
-            "INFO",
-            f"Total de registros a procesar: {len(notificaciones)}",
-        )
+        print(f"Total de registros a procesar: {len(notificaciones)}")
 
         if not notificaciones:
             _log_step(
