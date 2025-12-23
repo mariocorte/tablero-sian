@@ -13,6 +13,7 @@ import contextlib
 import io
 from dataclasses import dataclass
 from typing import Iterable, List, Optional
+import xml.etree.ElementTree as ET
 
 import psycopg2
 from psycopg2 import extras
@@ -129,9 +130,47 @@ def _contar_por_estado(conn_pg: psycopg2.extensions.connection, estado_objetivo:
     return int(resultado[0]) if resultado else 0
 
 
+def _obtener_ultimo_estado_desde_xml(xml_respuesta: str) -> Optional[str]:
+    """Extrae el último estado desde el XML del servicio SOAP."""
+
+    if not xml_respuesta:
+        return None
+
+    try:
+        root = ET.fromstring(xml_respuesta)
+    except ET.ParseError as exc:
+        _log_step(
+            "procesar_por_estado",
+            "ADVERTENCIA",
+            f"No se pudo parsear el XML de respuesta: {exc}",
+        )
+        return None
+
+    namespaces = {
+        "soap": "http://schemas.xmlsoap.org/soap/envelope/",
+        "temp": "http://tempuri.org/",
+    }
+    estados = root.findall(
+        ".//temp:HistorialEstados/temp:EstadoNotificacion", namespaces
+    )
+    if not estados:
+        return None
+
+    estados_normalizados = historialsian._normalizar_estados(estados, namespaces)
+    if not estados_normalizados:
+        return None
+
+    ultimo_estado = historialsian._obtener_estado_mas_reciente(estados_normalizados)
+    if ultimo_estado is None:
+        return None
+
+    return (ultimo_estado.get("estado") or "").strip()
+
+
 def _procesar_notificacion(
     conn_panel: psycopg2.extensions.connection,
     notificacion: NotificacionPendiente,
+    estado_objetivo: str,
     usar_test: bool,
 ) -> Optional[retornoxmlmp.ResultadoSOAP]:
     """Invoca el servicio SOAP y dispara la actualización del historial."""
@@ -181,6 +220,19 @@ def _procesar_notificacion(
             f"Sin resultado para {notificacion.codigo_seguimiento}",
         )
         return
+
+    ultimo_estado_xml = _obtener_ultimo_estado_desde_xml(resultado.xml_respuesta)
+    if ultimo_estado_xml is not None:
+        if ultimo_estado_xml.strip().lower() == estado_objetivo.strip().lower():
+            _log_step(
+                "procesar_por_estado",
+                "OK",
+                (
+                    f"{notificacion.codigo_seguimiento}: último estado '{ultimo_estado_xml}' "
+                    f"coincide con '{estado_objetivo}', se omite actualización."
+                ),
+            )
+            return resultado
 
     envio = retornoxmlmp.EnvioNotificacion(
         id_envio=0,
@@ -276,7 +328,9 @@ def procesar_por_estado(
             return
 
         for notificacion in notificaciones:
-            resultado = _procesar_notificacion(conn_panel, notificacion, bandera_test)
+            resultado = _procesar_notificacion(
+                conn_panel, notificacion, estado_normalizado, bandera_test
+            )
             _imprimir_resultado_en_consola(notificacion, resultado)
 
 
