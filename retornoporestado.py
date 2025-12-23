@@ -118,11 +118,25 @@ def _procesar_notificacion(
         ),
     )
 
-    resultado, mensaje_error = retornoxmlmp._invocar_servicio(
-        notificacion.codigo_seguimiento,
-        usar_test,
-        mostrar_respuesta=False,
-    )
+    try:
+        resultado, mensaje_error = retornoxmlmp._invocar_servicio(
+            notificacion.codigo_seguimiento,
+            usar_test,
+            mostrar_respuesta=False,
+        )
+    except TypeError:
+        _log_step(
+            "procesar_por_estado",
+            "ADVERTENCIA",
+            (
+                "retornoxmlmp._invocar_servicio no acepta el parámetro "
+                "'mostrar_respuesta'; se usa la llamada compatible."
+            ),
+        )
+        resultado, mensaje_error = retornoxmlmp._invocar_servicio(
+            notificacion.codigo_seguimiento,
+            usar_test,
+        )
 
     if mensaje_error:
         _log_step(
