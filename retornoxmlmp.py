@@ -370,8 +370,6 @@ def _ejecutar_historial_sian(
         f"Ejecutando {script_path.name}",
     )
 
-    print(f"[retornoxmlmp] Ejecutando {script_path.name}", flush=True)
-
     try:
         comando = [sys.executable, str(script_path)]
         if codigo_seguimiento:
@@ -388,7 +386,6 @@ def _ejecutar_historial_sian(
             f"historialsian.py finalizó con error: {exc}",
         )
     else:
-        print("[retornoxmlmp] historialsian.py finalizó correctamente", flush=True)
         mensaje = "historialsian.py finalizó correctamente"
         if codigo_seguimiento:
             mensaje = (
@@ -600,9 +597,9 @@ def _invocar_servicio(
         return None, mensaje_error
 
     if mostrar_respuesta:
-        print(f"[MP] Código de seguimiento consultado: {codigo_seguimiento}")
         xml_legible = _formatear_xml_legible(xml_texto)
-        print(f"[MP] XML devuelto:\n{xml_legible}")
+        print(f"CODIGODESEGUIMIENTOMP: {codigo_seguimiento}")
+        print(f"XML amigable:\n{xml_legible}\n")
 
     return ResultadoSOAP(codigo_seguimiento=codigo_seguimiento, xml_respuesta=xml_texto), None
 
@@ -806,6 +803,8 @@ def procesar_envios(
             iteraciones = ITERACIONES
 
         se_procesaron_envios_codigo = False
+        iteraciones_preparadas: List[Tuple[IteracionConsulta, datetime, List[EnvioNotificacion], str, bool, bool]] = []
+        total_envios = 0
 
         for iteracion in iteraciones:
             inicio_iteracion = datetime.now()
@@ -831,6 +830,7 @@ def procesar_envios(
                 continue
 
             cantidad_envios = len(envios)
+            total_envios += cantidad_envios
             mensaje_iteracion = (
                 "[procesar_envios] Iteración: {descripcion} | Inicio: {inicio:%Y-%m-%d %H:%M:%S} | "
                 "Registros a procesar: {cantidad}"
@@ -839,7 +839,6 @@ def procesar_envios(
                 inicio=inicio_iteracion,
                 cantidad=cantidad_envios,
             )
-            print(mensaje_iteracion)
 
             es_iteracion_dependencia = iteracion.estados == (
                 "En Dep. Policial",
@@ -855,6 +854,34 @@ def procesar_envios(
                 and iteracion.min_dias == 25
                 and iteracion.max_dias == 45
             )
+
+            iteraciones_preparadas.append(
+                (
+                    iteracion,
+                    inicio_iteracion,
+                    envios,
+                    mensaje_iteracion,
+                    es_iteracion_dependencia,
+                    es_iteracion_notificaciones_25_45,
+                )
+            )
+
+        if not iteraciones_preparadas:
+            print("Total de registros a procesar: 0")
+
+        total_impreso = False
+
+        for (
+            iteracion,
+            inicio_iteracion,
+            envios,
+            mensaje_iteracion,
+            es_iteracion_dependencia,
+            es_iteracion_notificaciones_25_45,
+        ) in iteraciones_preparadas:
+            if not total_impreso:
+                print(f"Total de registros a procesar: {total_envios}")
+                total_impreso = True
 
             ejecutar_historial_general = (
                 codigo_filtrado is None
