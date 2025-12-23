@@ -18,6 +18,7 @@ import subprocess
 import sys
 import time
 from typing import Iterable, List, Optional, Tuple
+from xml.dom import minidom
 
 import psycopg2
 from psycopg2 import extras
@@ -598,9 +599,22 @@ def _invocar_servicio(
         return None, mensaje_error
 
     print(f"[MP] Código de seguimiento consultado: {codigo_seguimiento}")
-    print(f"[MP] XML devuelto:\n{xml_texto}")
+    xml_legible = _formatear_xml_legible(xml_texto)
+    print(f"[MP] XML devuelto:\n{xml_legible}")
 
     return ResultadoSOAP(codigo_seguimiento=codigo_seguimiento, xml_respuesta=xml_texto), None
+
+
+def _formatear_xml_legible(xml_texto: str) -> str:
+    """Devuelve el XML con indentación legible, o el original si falla."""
+
+    try:
+        documento = minidom.parseString(xml_texto)
+        pretty = documento.toprettyxml(indent="  ")
+        lineas = [linea for linea in pretty.splitlines() if linea.strip()]
+        return "\n".join(lineas)
+    except Exception:
+        return xml_texto
 
 
 def _segundos_retry_after(
