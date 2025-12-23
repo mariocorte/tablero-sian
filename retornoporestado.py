@@ -9,6 +9,8 @@ XML en ``retornomp`` y ejecuta ``historialsian`` para refrescar los estados.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 from dataclasses import dataclass
 from typing import Iterable, List, Optional
 
@@ -29,6 +31,16 @@ class NotificacionPendiente:
     pactuacionid: int
     pdomicilioelectronicopj: str
     fecha_ultimo_estado: Optional[object]
+
+
+@contextlib.contextmanager
+def _silenciar_salida_consola() -> Iterable[None]:
+    """Suprime temporalmente stdout y stderr para evitar ruido en consola."""
+
+    buffer_stdout = io.StringIO()
+    buffer_stderr = io.StringIO()
+    with contextlib.redirect_stdout(buffer_stdout), contextlib.redirect_stderr(buffer_stderr):
+        yield
 
 
 def _obtener_notificaciones_por_estado(
@@ -118,25 +130,26 @@ def _procesar_notificacion(
         ),
     )
 
-    try:
-        resultado, mensaje_error = retornoxmlmp._invocar_servicio(
-            notificacion.codigo_seguimiento,
-            usar_test,
-            mostrar_respuesta=False,
-        )
-    except TypeError:
-        _log_step(
-            "procesar_por_estado",
-            "ADVERTENCIA",
-            (
-                "retornoxmlmp._invocar_servicio no acepta el parámetro "
-                "'mostrar_respuesta'; se usa la llamada compatible."
-            ),
-        )
-        resultado, mensaje_error = retornoxmlmp._invocar_servicio(
-            notificacion.codigo_seguimiento,
-            usar_test,
-        )
+    with _silenciar_salida_consola():
+        try:
+            resultado, mensaje_error = retornoxmlmp._invocar_servicio(
+                notificacion.codigo_seguimiento,
+                usar_test,
+                mostrar_respuesta=False,
+            )
+        except TypeError:
+            _log_step(
+                "procesar_por_estado",
+                "ADVERTENCIA",
+                (
+                    "retornoxmlmp._invocar_servicio no acepta el parámetro "
+                    "'mostrar_respuesta'; se usa la llamada compatible."
+                ),
+            )
+            resultado, mensaje_error = retornoxmlmp._invocar_servicio(
+                notificacion.codigo_seguimiento,
+                usar_test,
+            )
 
     if mensaje_error:
         _log_step(
@@ -177,7 +190,8 @@ def _procesar_notificacion(
         )
         return
 
-    historialsian.pre_historial(codigodeseguimientomp=notificacion.codigo_seguimiento)
+    with _silenciar_salida_consola():
+        historialsian.pre_historial(codigodeseguimientomp=notificacion.codigo_seguimiento)
     _log_step(
         "procesar_por_estado",
         "OK",
