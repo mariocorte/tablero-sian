@@ -337,6 +337,9 @@ def _invocar_servicio(
         )
         return None
 
+    print(f"[MP] Código de seguimiento consultado: {codigo_seguimiento}")
+    print(f"[MP] XML devuelto:\n{xml_texto}")
+
     return ResultadoSOAP(codigo_seguimiento=codigo_seguimiento, xml_respuesta=xml_texto)
 
 
