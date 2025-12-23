@@ -78,6 +78,30 @@ def _obtener_notificaciones_por_estado(
     return notificaciones
 
 
+def _contar_por_estado(conn_pg: psycopg2.extensions.connection, estado_objetivo: str) -> int:
+    """Cuenta cuántos registros tienen como último estado el valor indicado."""
+
+    consulta = """
+        SELECT COUNT(*) AS total
+        FROM (
+            SELECT DISTINCT ON (TRIM(codigoseguimientomp))
+                TRIM(codigoseguimientomp) AS codigo_seguimiento,
+                COALESCE(notpolhistoricompestado, '') AS estado
+            FROM notpolhistoricomp
+            WHERE codigoseguimientomp IS NOT NULL
+              AND TRIM(codigoseguimientomp) <> ''
+            ORDER BY TRIM(codigoseguimientomp), notpolhistoricompfecha DESC NULLS LAST
+        ) AS ultimos
+        WHERE LOWER(estado) = LOWER(%s);
+    """
+
+    with conn_pg.cursor() as cursor:
+        cursor.execute(consulta, (estado_objetivo.strip(),))
+        resultado = cursor.fetchone()
+
+    return int(resultado[0]) if resultado else 0
+
+
 def _procesar_notificacion(
     conn_panel: psycopg2.extensions.connection,
     notificacion: NotificacionPendiente,
@@ -163,6 +187,11 @@ def procesar_por_estado(
     ) as conn_panel:
         conn_pg.autocommit = False
         conn_panel.autocommit = False
+
+        cantidad = _contar_por_estado(conn_pg, estado_normalizado)
+        print(
+            f"[procesar_por_estado] Registros cuyo último estado es '{estado_normalizado}': {cantidad}"
+        )
 
         notificaciones = _obtener_notificaciones_por_estado(
             conn_pg,
