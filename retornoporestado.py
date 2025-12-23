@@ -106,7 +106,7 @@ def _procesar_notificacion(
     conn_panel: psycopg2.extensions.connection,
     notificacion: NotificacionPendiente,
     usar_test: bool,
-) -> None:
+) -> Optional[retornoxmlmp.ResultadoSOAP]:
     """Invoca el servicio SOAP y dispara la actualización del historial."""
 
     _log_step(
@@ -121,6 +121,7 @@ def _procesar_notificacion(
     resultado, mensaje_error = retornoxmlmp._invocar_servicio(
         notificacion.codigo_seguimiento,
         usar_test,
+        mostrar_respuesta=False,
     )
 
     if mensaje_error:
@@ -169,6 +170,21 @@ def _procesar_notificacion(
         f"Actualización completada para {notificacion.codigo_seguimiento}",
     )
 
+    return resultado
+
+
+def _imprimir_resultado_en_consola(
+    notificacion: NotificacionPendiente, resultado: Optional[retornoxmlmp.ResultadoSOAP]
+) -> None:
+    """Muestra únicamente el código de seguimiento y el XML formateado."""
+
+    if resultado is None:
+        return
+
+    xml_legible = retornoxmlmp._formatear_xml_legible(resultado.xml_respuesta)
+    print(f"Código de seguimiento: {notificacion.codigo_seguimiento}")
+    print(f"XML devuelto:\n{xml_legible}")
+
 
 def procesar_por_estado(
     estado_objetivo: str,
@@ -188,11 +204,6 @@ def procesar_por_estado(
         conn_pg.autocommit = False
         conn_panel.autocommit = False
 
-        cantidad = _contar_por_estado(conn_pg, estado_normalizado)
-        print(
-            f"[procesar_por_estado] Registros cuyo último estado es '{estado_normalizado}': {cantidad}"
-        )
-
         notificaciones = _obtener_notificaciones_por_estado(
             conn_pg,
             estado_normalizado,
@@ -207,7 +218,8 @@ def procesar_por_estado(
             return
 
         for notificacion in notificaciones:
-            _procesar_notificacion(conn_panel, notificacion, bandera_test)
+            resultado = _procesar_notificacion(conn_panel, notificacion, bandera_test)
+            _imprimir_resultado_en_consola(notificacion, resultado)
 
 
 def _parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:

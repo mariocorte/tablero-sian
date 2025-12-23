@@ -516,6 +516,7 @@ def _invocar_servicio(
     usar_test: bool,
     timeout: int = 60,
     max_reintentos: int = 3,
+    mostrar_respuesta: bool = True,
 ) -> Tuple[Optional[ResultadoSOAP], Optional[str]]:
     """Invoca el servicio SOAP y retorna el XML completo de la respuesta."""
 
@@ -598,9 +599,10 @@ def _invocar_servicio(
         )
         return None, mensaje_error
 
-    print(f"[MP] Código de seguimiento consultado: {codigo_seguimiento}")
-    xml_legible = _formatear_xml_legible(xml_texto)
-    print(f"[MP] XML devuelto:\n{xml_legible}")
+    if mostrar_respuesta:
+        print(f"[MP] Código de seguimiento consultado: {codigo_seguimiento}")
+        xml_legible = _formatear_xml_legible(xml_texto)
+        print(f"[MP] XML devuelto:\n{xml_legible}")
 
     return ResultadoSOAP(codigo_seguimiento=codigo_seguimiento, xml_respuesta=xml_texto), None
 
