@@ -55,7 +55,8 @@ def _obtener_notificaciones_por_estado(
             pactuacionid,
             pdomicilioelectronicopj,
             notpolhistoricompfecha,
-            notpolhistoricompestado
+            notpolhistoricompestado,
+            notpolhistoricompestadoid
         FROM (
             SELECT DISTINCT ON (TRIM(codigoseguimientomp))
                 TRIM(codigoseguimientomp) AS codigo_seguimiento,
@@ -63,13 +64,15 @@ def _obtener_notificaciones_por_estado(
                 pactuacionid,
                 pdomicilioelectronicopj,
                 notpolhistoricompfecha,
-                notpolhistoricompestado
+                notpolhistoricompestado,
+                notpolhistoricompestadoid
             FROM notpolhistoricomp
             WHERE codigoseguimientomp IS NOT NULL
               AND TRIM(codigoseguimientomp) <> ''
             ORDER BY TRIM(codigoseguimientomp), notpolhistoricompfecha DESC NULLS LAST
         ) AS ultimos
         WHERE notpolhistoricompfecha::date < CURRENT_DATE
+        ORDER BY notpolhistoricompestadoid ASC NULLS LAST
     """
 
     with conn_pg.cursor(cursor_factory=extras.DictCursor) as cursor:
