@@ -195,7 +195,20 @@ def _imprimir_resultado_en_consola(
     if resultado is None:
         return
 
-    xml_legible = retornoxmlmp._formatear_xml_legible(resultado.xml_respuesta)
+    formateador = getattr(retornoxmlmp, "_formatear_xml_legible", None)
+    if formateador is None:
+        from xml.dom import minidom
+
+        def formateador(xml_texto: str) -> str:  # type: ignore[redefinition]
+            try:
+                documento = minidom.parseString(xml_texto)
+                pretty = documento.toprettyxml(indent="  ")
+                lineas = [linea for linea in pretty.splitlines() if linea.strip()]
+                return "\n".join(lineas)
+            except Exception:
+                return xml_texto
+
+    xml_legible = formateador(resultado.xml_respuesta)
     print(f"Código de seguimiento: {notificacion.codigo_seguimiento}")
     print(f"XML devuelto:\n{xml_legible}")
 
@@ -221,6 +234,12 @@ def procesar_por_estado(
         notificaciones = _obtener_notificaciones_por_estado(
             conn_pg,
             estado_normalizado,
+        )
+
+        _log_step(
+            "procesar_por_estado",
+            "INFO",
+            f"Total de registros a procesar: {len(notificaciones)}",
         )
 
         if not notificaciones:
