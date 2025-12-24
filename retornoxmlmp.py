@@ -18,6 +18,7 @@ import subprocess
 import sys
 import time
 from typing import Iterable, List, Optional, Tuple
+import xml.etree.ElementTree as ET
 from xml.dom import minidom
 
 import psycopg2
@@ -51,6 +52,10 @@ MAX_OBSERVACION_LEN = 400
 # la probabilidad de recibir respuestas ``HTTP 429`` cuando se ejecutan muchos
 # requerimientos de manera seguida.
 MIN_INTERVALO_SOAP_SEGUNDOS = 1.5
+XML_NAMESPACES = {
+    "soap": SOAP_ENVELOPE,
+    "temp": SOAP_NAMESPACE,
+}
 
 
 class _SesionSOAP(requests.Session):
@@ -616,6 +621,97 @@ def _formatear_xml_legible(xml_texto: str) -> str:
         return xml_texto
 
 
+def _obtener_texto_xml(
+    nodo: ET.Element, tag: str, namespaces: dict[str, str]
+) -> Optional[str]:
+    elemento = nodo.find(f"temp:{tag}", namespaces)
+    if elemento is None or elemento.text is None:
+        return None
+    texto = elemento.text.strip()
+    return texto if texto else None
+
+
+def _extraer_datos_archivo(
+    xml_respuesta: str,
+) -> Optional[dict[str, Optional[str]]]:
+    """Extrae datos de archivo desde la respuesta SOAP."""
+
+    if not xml_respuesta:
+        return None
+
+    try:
+        root = ET.fromstring(xml_respuesta)
+    except ET.ParseError as exc:
+        _log_step(
+            "_extraer_datos_archivo",
+            "ADVERTENCIA",
+            f"No se pudo parsear XML de archivo: {exc}",
+        )
+        return None
+
+    estado_seleccionado: dict[str, Optional[str]] = {}
+    for estado_node in root.findall(".//temp:EstadoNotificacion", XML_NAMESPACES):
+        archivo_id = _obtener_texto_xml(estado_node, "ArchivoId", XML_NAMESPACES)
+        archivo_nombre = _obtener_texto_xml(estado_node, "ArchivoNombre", XML_NAMESPACES)
+        archivo_contenido = _obtener_texto_xml(
+            estado_node, "ArchivoContenido", XML_NAMESPACES
+        )
+        if archivo_id or archivo_nombre or archivo_contenido:
+            estado_seleccionado = {
+                "estado_id": _obtener_texto_xml(
+                    estado_node, "EstadoNotificacionId", XML_NAMESPACES
+                ),
+                "archivo_id": archivo_id,
+                "archivo_nombre": archivo_nombre,
+                "archivo_contenido": archivo_contenido,
+            }
+
+    return estado_seleccionado or None
+
+
+def _actualizar_datos_archivo(
+    conn_pg: psycopg2.extensions.connection,
+    envio: EnvioNotificacion,
+    xml_respuesta: str,
+) -> bool:
+    """Actualiza los datos de archivo en enviocedulanotificacionpolicia."""
+
+    datos_archivo = _extraer_datos_archivo(xml_respuesta)
+    if not datos_archivo:
+        return False
+
+    sentencia = """
+        UPDATE enviocedulanotificacionpolicia
+        SET ecedarchivosegnotid = %s,
+            ecedarchivoseguimientoid = %s,
+            ecedarchivoseguimientonombre = %s,
+            ecedarchivoseguimientodatos = %s
+        WHERE pmovimientoid = %s
+          AND pactuacionid = %s
+          AND pdomicilioelectronicopj = %s
+    """
+
+    with conn_pg.cursor() as cursor:
+        cursor.execute(
+            sentencia,
+            (
+                int(datos_archivo["estado_id"])
+                if datos_archivo.get("estado_id")
+                else None,
+                int(datos_archivo["archivo_id"])
+                if datos_archivo.get("archivo_id")
+                else None,
+                datos_archivo.get("archivo_nombre"),
+                datos_archivo.get("archivo_contenido"),
+                envio.pmovimientoid,
+                envio.pactuacionid,
+                envio.pdomicilioelectronicopj,
+            ),
+        )
+    conn_pg.commit()
+    return True
+
+
 def _segundos_retry_after(
     valor_header: Optional[str],
     *,
@@ -926,6 +1022,24 @@ def procesar_envios(
                             observacion_error = (
                                 f"[procesar_envios] Iteración: {iteracion.descripcion} | "
                                 f"{envio.codigoseguimientomp}: error al almacenar XML: {exc}"
+                            )
+                            _registrar_evento_ejecucion(
+                                conn_panel,
+                                datetime.now(),
+                                0,
+                                observacion_error,
+                            )
+                        try:
+                            _actualizar_datos_archivo(
+                                conn_pg,
+                                envio,
+                                resultado.xml_respuesta,
+                            )
+                        except Exception as exc:
+                            conn_pg.rollback()
+                            observacion_error = (
+                                f"[procesar_envios] Iteración: {iteracion.descripcion} | "
+                                f"{envio.codigoseguimientomp}: error al actualizar archivo: {exc}"
                             )
                             _registrar_evento_ejecucion(
                                 conn_panel,

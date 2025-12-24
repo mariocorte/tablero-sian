@@ -168,6 +168,7 @@ def _obtener_ultimo_estado_desde_xml(xml_respuesta: str) -> Optional[str]:
 
 
 def _procesar_notificacion(
+    conn_pg: psycopg2.extensions.connection,
     conn_panel: psycopg2.extensions.connection,
     notificacion: NotificacionPendiente,
     estado_objetivo: str,
@@ -257,6 +258,24 @@ def _procesar_notificacion(
         )
         return
 
+    try:
+        retornoxmlmp._actualizar_datos_archivo(
+            conn_pg,
+            envio,
+            resultado.xml_respuesta,
+        )
+    except Exception as exc:  # pragma: no cover - dependiente de la base real
+        conn_pg.rollback()
+        _log_step(
+            "procesar_por_estado",
+            "ERROR",
+            (
+                f"{notificacion.codigo_seguimiento}: "
+                f"no se pudo actualizar archivo: {exc}"
+            ),
+        )
+        return
+
     with _silenciar_salida_consola():
         historialsian.pre_historial(codigodeseguimientomp=notificacion.codigo_seguimiento)
     _log_step(
@@ -329,7 +348,11 @@ def procesar_por_estado(
 
         for notificacion in notificaciones:
             resultado = _procesar_notificacion(
-                conn_panel, notificacion, estado_normalizado, bandera_test
+                conn_pg,
+                conn_panel,
+                notificacion,
+                estado_normalizado,
+                bandera_test,
             )
             _imprimir_resultado_en_consola(notificacion, resultado)
 
