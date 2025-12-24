@@ -79,6 +79,7 @@ def _obtener_notificaciones_por_estado(
          AND env.pdomicilioelectronicopj = ultimos.pdomicilioelectronicopj
         WHERE ultimos.notpolhistoricompfecha::date < CURRENT_DATE
           AND ultimos.notpolhistoricomparchivoid IS NOT NULL
+          AND ultimos.notpolhistoricomparchivoid <> 0
           AND env.ecedarchivoseguimientodatos IS NULL
         ORDER BY ultimos.notpolhistoricompestadonid ASC NULLS LAST
     """
@@ -122,14 +123,17 @@ def _contar_por_estado(
             SELECT DISTINCT ON (TRIM(codigoseguimientomp))
                 TRIM(codigoseguimientomp) AS codigo_seguimiento,
                 COALESCE(notpolhistoricompestado, '') AS estado,
-                notpolhistoricompfecha
+                notpolhistoricompfecha,
+                notpolhistoricomparchivoid
             FROM notpolhistoricomp
             WHERE codigoseguimientomp IS NOT NULL
               AND TRIM(codigoseguimientomp) <> ''
             ORDER BY TRIM(codigoseguimientomp), notpolhistoricompfecha DESC NULLS LAST
         ) AS ultimos
         WHERE (%s IS NULL OR LOWER(estado) = LOWER(%s))
-          AND notpolhistoricompfecha::date < CURRENT_DATE;
+          AND notpolhistoricompfecha::date < CURRENT_DATE
+          AND notpolhistoricomparchivoid IS NOT NULL
+          AND notpolhistoricomparchivoid <> 0;
     """
 
     with conn_pg.cursor() as cursor:
