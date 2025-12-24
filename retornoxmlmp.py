@@ -423,7 +423,24 @@ def _obtener_envios(
             codigoseguimientomp
         FROM enviocedulanotificacionpolicia
         WHERE COALESCE(descartada, FALSE) = FALSE
-          AND COALESCE(laststagesian, '') <> 'Finalizada'
+          AND (
+            COALESCE(laststagesian, '') <> 'Finalizada'
+            OR (
+                COALESCE(ecedarchivoseguimientodatos, '') = ''
+                AND EXISTS (
+                    SELECT 1
+                    FROM (
+                        SELECT n.notpolhistoricomparchivoid
+                        FROM notpolhistoricomp AS n
+                        WHERE TRIM(n.codigoseguimientomp) = TRIM(enviocedulanotificacionpolicia.codigoseguimientomp)
+                        ORDER BY n.notpolhistoricompfecha DESC NULLS LAST
+                        LIMIT 1
+                    ) AS ultimo_archivo
+                    WHERE ultimo_archivo.notpolhistoricomparchivoid IS NOT NULL
+                      AND ultimo_archivo.notpolhistoricomparchivoid <> 0
+                )
+            )
+          )
           AND codigoseguimientomp IS NOT NULL
           AND codigoseguimientomp <> ''
           AND feiw = 'NO'
@@ -712,6 +729,26 @@ def _actualizar_datos_archivo(
     return True
 
 
+def _guardar_codigos_actualizados(
+    codigos: Iterable[str],
+    destino: Optional[Path] = None,
+) -> Optional[Path]:
+    """Guarda un TXT con los códigos de seguimiento actualizados."""
+
+    codigos_filtrados = sorted({codigo.strip() for codigo in codigos if codigo})
+    if not codigos_filtrados:
+        return None
+
+    ruta = destino or (
+        Path(__file__).resolve().parent
+        / f"codigos_actualizados_archivo_{datetime.now():%Y%m%d_%H%M%S}.txt"
+    )
+    with ruta.open("w", encoding="utf-8") as archivo:
+        for codigo in codigos_filtrados:
+            archivo.write(f"{codigo}\n")
+    return ruta
+
+
 def _segundos_retry_after(
     valor_header: Optional[str],
     *,
@@ -901,6 +938,7 @@ def procesar_envios(
         se_procesaron_envios_codigo = False
         iteraciones_preparadas: List[Tuple[IteracionConsulta, datetime, List[EnvioNotificacion], str, bool, bool]] = []
         total_envios = 0
+        codigos_actualizados_archivo: set[str] = set()
 
         for iteracion in iteraciones:
             inicio_iteracion = datetime.now()
@@ -1030,11 +1068,15 @@ def procesar_envios(
                                 observacion_error,
                             )
                         try:
-                            _actualizar_datos_archivo(
+                            actualizado_archivo = _actualizar_datos_archivo(
                                 conn_pg,
                                 envio,
                                 resultado.xml_respuesta,
                             )
+                            if actualizado_archivo:
+                                codigos_actualizados_archivo.add(
+                                    envio.codigoseguimientomp
+                                )
                         except Exception as exc:
                             conn_pg.rollback()
                             observacion_error = (
@@ -1076,6 +1118,13 @@ def procesar_envios(
 
         if codigo_filtrado is not None and se_procesaron_envios_codigo:
             _ejecutar_historial_sian(codigo_filtrado)
+
+        ruta_txt = _guardar_codigos_actualizados(codigos_actualizados_archivo)
+        if ruta_txt:
+            print(
+                "[procesar_envios] Archivo de códigos actualizados generado en "
+                f"{ruta_txt}"
+            )
 
 
 def procesar_periodo(periodo: str, usar_test: Optional[bool] = None) -> None:
