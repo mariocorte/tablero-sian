@@ -51,13 +51,13 @@ def _obtener_notificaciones_por_estado(
 
     consulta = """
         SELECT
-            codigo_seguimiento,
-            pmovimientoid,
-            pactuacionid,
-            pdomicilioelectronicopj,
-            notpolhistoricompfecha,
-            notpolhistoricompestado,
-            notpolhistoricompestadoid
+            ultimos.codigo_seguimiento,
+            ultimos.pmovimientoid,
+            ultimos.pactuacionid,
+            ultimos.pdomicilioelectronicopj,
+            ultimos.notpolhistoricompfecha,
+            ultimos.notpolhistoricompestado,
+            ultimos.notpolhistoricompestadonid
         FROM (
             SELECT DISTINCT ON (TRIM(codigoseguimientomp))
                 TRIM(codigoseguimientomp) AS codigo_seguimiento,
@@ -66,14 +66,21 @@ def _obtener_notificaciones_por_estado(
                 pdomicilioelectronicopj,
                 notpolhistoricompfecha,
                 notpolhistoricompestado,
-                notpolhistoricompestadoid
+                notpolhistoricompestadonid,
+                notpolhistoricomparchivoid
             FROM notpolhistoricomp
             WHERE codigoseguimientomp IS NOT NULL
               AND TRIM(codigoseguimientomp) <> ''
             ORDER BY TRIM(codigoseguimientomp), notpolhistoricompfecha DESC NULLS LAST
         ) AS ultimos
-        WHERE notpolhistoricompfecha::date < CURRENT_DATE
-        ORDER BY notpolhistoricompestadoid ASC NULLS LAST
+        JOIN enviocedulanotificacionpolicia env
+          ON env.pmovimientoid = ultimos.pmovimientoid
+         AND env.pactuacionid = ultimos.pactuacionid
+         AND env.pdomicilioelectronicopj = ultimos.pdomicilioelectronicopj
+        WHERE ultimos.notpolhistoricompfecha::date < CURRENT_DATE
+          AND ultimos.notpolhistoricomparchivoid IS NOT NULL
+          AND env.ecedarchivoseguimientodatos IS NULL
+        ORDER BY ultimos.notpolhistoricompestadonid ASC NULLS LAST
     """
 
     with conn_pg.cursor(cursor_factory=extras.DictCursor) as cursor:
@@ -173,7 +180,7 @@ def _procesar_notificacion(
     notificacion: NotificacionPendiente,
     estado_objetivo: str,
     usar_test: bool,
-) -> Optional[retornoxmlmp.ResultadoSOAP]:
+) -> tuple[Optional[retornoxmlmp.ResultadoSOAP], bool]:
     """Invoca el servicio SOAP y dispara la actualización del historial."""
 
     _log_step(
@@ -212,7 +219,7 @@ def _procesar_notificacion(
             "ERROR",
             mensaje_error,
         )
-        return
+        return None, False
 
     if resultado is None:
         _log_step(
@@ -220,7 +227,7 @@ def _procesar_notificacion(
             "ADVERTENCIA",
             f"Sin resultado para {notificacion.codigo_seguimiento}",
         )
-        return
+        return None, False
 
     ultimo_estado_xml = _obtener_ultimo_estado_desde_xml(resultado.xml_respuesta)
     if ultimo_estado_xml is not None:
@@ -233,7 +240,7 @@ def _procesar_notificacion(
                     f"coincide con '{estado_objetivo}', se omite actualización."
                 ),
             )
-            return resultado
+            return resultado, False
 
     envio = retornoxmlmp.EnvioNotificacion(
         id_envio=0,
@@ -256,7 +263,7 @@ def _procesar_notificacion(
             "ERROR",
             f"{notificacion.codigo_seguimiento}: no se pudo almacenar el XML: {exc}",
         )
-        return
+        return None, False
 
     try:
         retornoxmlmp._actualizar_datos_archivo(
@@ -274,7 +281,7 @@ def _procesar_notificacion(
                 f"no se pudo actualizar archivo: {exc}"
             ),
         )
-        return
+        return None, False
 
     with _silenciar_salida_consola():
         historialsian.pre_historial(codigodeseguimientomp=notificacion.codigo_seguimiento)
@@ -284,7 +291,7 @@ def _procesar_notificacion(
         f"Actualización completada para {notificacion.codigo_seguimiento}",
     )
 
-    return resultado
+    return resultado, True
 
 
 def _imprimir_resultado_en_consola(
@@ -346,8 +353,9 @@ def procesar_por_estado(
             )
             return
 
+        codigos_actualizados: List[str] = []
         for notificacion in notificaciones:
-            resultado = _procesar_notificacion(
+            resultado, actualizado = _procesar_notificacion(
                 conn_pg,
                 conn_panel,
                 notificacion,
@@ -355,6 +363,12 @@ def procesar_por_estado(
                 bandera_test,
             )
             _imprimir_resultado_en_consola(notificacion, resultado)
+            if actualizado:
+                codigos_actualizados.append(notificacion.codigo_seguimiento)
+
+        if codigos_actualizados:
+            with open("codigos_actualizados.txt", "w", encoding="utf-8") as archivo:
+                archivo.write("\n".join(codigos_actualizados))
 
 
 def _parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
