@@ -45,9 +45,9 @@ def _silenciar_salida_consola() -> Iterable[None]:
 
 
 def _obtener_notificaciones_por_estado(
-    conn_pg: psycopg2.extensions.connection, estado_objetivo: str
+    conn_pg: psycopg2.extensions.connection, estado_objetivo: Optional[str]
 ) -> List[NotificacionPendiente]:
-    """Devuelve las notificaciones cuyo último estado coincide con el objetivo."""
+    """Devuelve las notificaciones filtradas por el último estado cuando aplica."""
 
     consulta = """
         SELECT
@@ -88,10 +88,10 @@ def _obtener_notificaciones_por_estado(
         filas = cursor.fetchall()
 
     notificaciones: List[NotificacionPendiente] = []
-    estado_normalizado = estado_objetivo.strip().lower()
+    estado_normalizado = estado_objetivo.strip().lower() if estado_objetivo else ""
     for fila in filas:
         estado_ultimo = (fila["notpolhistoricompestado"] or "").strip().lower()
-        if estado_ultimo != estado_normalizado:
+        if estado_normalizado and estado_ultimo != estado_normalizado:
             continue
 
         codigo = (fila["codigo_seguimiento"] or "").strip()
@@ -111,7 +111,9 @@ def _obtener_notificaciones_por_estado(
     return notificaciones
 
 
-def _contar_por_estado(conn_pg: psycopg2.extensions.connection, estado_objetivo: str) -> int:
+def _contar_por_estado(
+    conn_pg: psycopg2.extensions.connection, estado_objetivo: Optional[str]
+) -> int:
     """Cuenta cuántos registros tienen como último estado el valor indicado."""
 
     consulta = """
@@ -126,12 +128,13 @@ def _contar_por_estado(conn_pg: psycopg2.extensions.connection, estado_objetivo:
               AND TRIM(codigoseguimientomp) <> ''
             ORDER BY TRIM(codigoseguimientomp), notpolhistoricompfecha DESC NULLS LAST
         ) AS ultimos
-        WHERE LOWER(estado) = LOWER(%s)
+        WHERE (%s IS NULL OR LOWER(estado) = LOWER(%s))
           AND notpolhistoricompfecha::date < CURRENT_DATE;
     """
 
     with conn_pg.cursor() as cursor:
-        cursor.execute(consulta, (estado_objetivo.strip(),))
+        estado_normalizado = estado_objetivo.strip() if estado_objetivo else None
+        cursor.execute(consulta, (estado_normalizado, estado_normalizado))
         resultado = cursor.fetchone()
 
     return int(resultado[0]) if resultado else 0
@@ -178,7 +181,7 @@ def _procesar_notificacion(
     conn_pg: psycopg2.extensions.connection,
     conn_panel: psycopg2.extensions.connection,
     notificacion: NotificacionPendiente,
-    estado_objetivo: str,
+    estado_objetivo: Optional[str],
     usar_test: bool,
 ) -> tuple[Optional[retornoxmlmp.ResultadoSOAP], bool]:
     """Invoca el servicio SOAP y dispara la actualización del historial."""
@@ -230,7 +233,7 @@ def _procesar_notificacion(
         return None, False
 
     ultimo_estado_xml = _obtener_ultimo_estado_desde_xml(resultado.xml_respuesta)
-    if ultimo_estado_xml is not None:
+    if ultimo_estado_xml is not None and estado_objetivo:
         if ultimo_estado_xml.strip().lower() == estado_objetivo.strip().lower():
             _log_step(
                 "procesar_por_estado",
@@ -321,14 +324,12 @@ def _imprimir_resultado_en_consola(
 
 
 def procesar_por_estado(
-    estado_objetivo: str,
+    estado_objetivo: Optional[str],
     usar_test: Optional[bool] = None,
 ) -> None:
     """Ejecuta el flujo de actualización filtrando por el último estado."""
 
-    estado_normalizado = estado_objetivo.strip()
-    if not estado_normalizado:
-        raise ValueError("El parámetro 'estado_objetivo' no puede estar vacío")
+    estado_normalizado = estado_objetivo.strip() if estado_objetivo else None
 
     bandera_test = default_test_flag if usar_test is None else usar_test
 
@@ -349,7 +350,12 @@ def procesar_por_estado(
             _log_step(
                 "procesar_por_estado",
                 "OK",
-                f"No se encontraron notificaciones con estado '{estado_normalizado}'",
+                (
+                    "No se encontraron notificaciones "
+                    f"con estado '{estado_normalizado}'"
+                    if estado_normalizado
+                    else "No se encontraron notificaciones para procesar"
+                ),
             )
             return
 
@@ -380,10 +386,11 @@ def _parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--estado",
-        required=True,
+        required=False,
         help=(
             "Estado exacto a filtrar (se compara con el último estado de "
-            "cada código en notpolhistoricomp)"
+            "cada código en notpolhistoricomp). Si se omite, procesa todos "
+            "los estados."
         ),
     )
     parser.add_argument(
