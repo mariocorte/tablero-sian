@@ -847,12 +847,25 @@ def _actualizar_datos_archivo(
     envio: EnvioNotificacion,
     xml_respuesta: str,
     usar_test: bool,
+    mostrar_llamado_archivo: bool = False,
 ) -> bool:
     """Actualiza los datos de archivo en enviocedulanotificacionpolicia."""
 
     estado_id = _extraer_estado_notificacion_id(xml_respuesta)
     if not estado_id:
         return False
+
+    if mostrar_llamado_archivo:
+        url = f"{_host_soap(usar_test)}/services/wsNotificacion.asmx"
+        payload = _construir_xml_peticion_archivo(estado_id)
+        headers = {
+            "Content-Type": "text/xml; charset=UTF-8",
+            "SOAPAction": SOAP_ACTION_ARCHIVO,
+        }
+        print("Llamado a ObtenerArchivoEstadoNotificacion:")
+        print(f"URL: {url}")
+        print(f"Headers: {headers}")
+        print(f"Payload:\n{payload}\n")
 
     xml_archivo, error_archivo = _invocar_servicio_archivo(
         estado_id,
