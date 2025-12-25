@@ -52,9 +52,9 @@ def _obtener_notificaciones_por_estado(
     consulta = """
         SELECT
             ultimos.codigo_seguimiento,
-            ultimos.pmovimientoid,
-            ultimos.pactuacionid,
-            ultimos.pdomicilioelectronicopj,
+            env.pmovimientoid,
+            env.pactuacionid,
+            env.pdomicilioelectronicopj,
             ultimos.notpolhistoricompfecha,
             ultimos.notpolhistoricompestado,
             ultimos.notpolhistoricompestadonid
@@ -74,9 +74,7 @@ def _obtener_notificaciones_por_estado(
             ORDER BY TRIM(codigoseguimientomp), notpolhistoricompfecha DESC NULLS LAST
         ) AS ultimos
         JOIN enviocedulanotificacionpolicia env
-          ON env.pmovimientoid = ultimos.pmovimientoid
-         AND env.pactuacionid = ultimos.pactuacionid
-         AND env.pdomicilioelectronicopj = ultimos.pdomicilioelectronicopj
+          ON TRIM(env.codigoseguimientomp) = ultimos.codigo_seguimiento
         WHERE ultimos.notpolhistoricompfecha::date < CURRENT_DATE
           AND ultimos.notpolhistoricomparchivoid IS NOT NULL
           AND ultimos.notpolhistoricomparchivoid <> 0
@@ -277,6 +275,7 @@ def _procesar_notificacion(
             conn_pg,
             envio,
             resultado.xml_respuesta,
+            usar_test,
         )
     except Exception as exc:  # pragma: no cover - dependiente de la base real
         conn_pg.rollback()

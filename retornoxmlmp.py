@@ -873,20 +873,33 @@ def _actualizar_datos_archivo(
     if not datos_archivo:
         return False
 
-    sentencia = """
+    sentencia_envio = """
         UPDATE enviocedulanotificacionpolicia
         SET ecedarchivosegnotid = %s,
             ecedarchivoseguimientoid = %s,
             ecedarchivoseguimientonombre = %s,
             ecedarchivoseguimientodatos = %s
-        WHERE pmovimientoid = %s
-          AND pactuacionid = %s
-          AND pdomicilioelectronicopj = %s
+        WHERE TRIM(codigoseguimientomp) = TRIM(%s)
+    """
+
+    sentencia_historial = """
+        UPDATE notpolhistoricomp
+        SET notpolhistoricomparchcont = %s
+        WHERE TRIM(codigoseguimientomp) = TRIM(%s)
+          AND notpolhistoricomparchivoid IS NOT NULL
+          AND notpolhistoricomparchivoid <> 0
+          AND notpolhistoricompfecha = (
+            SELECT MAX(n2.notpolhistoricompfecha)
+            FROM notpolhistoricomp AS n2
+            WHERE TRIM(n2.codigoseguimientomp) = TRIM(%s)
+              AND n2.notpolhistoricomparchivoid IS NOT NULL
+              AND n2.notpolhistoricomparchivoid <> 0
+          )
     """
 
     with conn_pg.cursor() as cursor:
         cursor.execute(
-            sentencia,
+            sentencia_envio,
             (
                 int(estado_id),
                 int(datos_archivo["archivo_id"])
@@ -894,9 +907,15 @@ def _actualizar_datos_archivo(
                 else None,
                 datos_archivo.get("archivo_nombre"),
                 datos_archivo.get("archivo_contenido"),
-                envio.pmovimientoid,
-                envio.pactuacionid,
-                envio.pdomicilioelectronicopj,
+                envio.codigoseguimientomp,
+            ),
+        )
+        cursor.execute(
+            sentencia_historial,
+            (
+                datos_archivo.get("archivo_contenido"),
+                envio.codigoseguimientomp,
+                envio.codigoseguimientomp,
             ),
         )
     conn_pg.commit()
