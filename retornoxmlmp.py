@@ -39,6 +39,7 @@ from historialsian import (
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 SOAP_ACTION = "http://tempuri.org/ObtenerEstadoNotificacion"
+SOAP_ACTION_ARCHIVO = "http://tempuri.org/ObtenerArchivoEstadoNotificacion"
 SOAP_NAMESPACE = "http://tempuri.org/"
 SOAP_ENVELOPE = "http://schemas.xmlsoap.org/soap/envelope/"
 
@@ -522,6 +523,25 @@ def _construir_xml_peticion(codigo_seguimiento: str) -> str:
 </soapenv:Envelope>"""
 
 
+def _construir_xml_peticion_archivo(estado_notificacion_id: str) -> str:
+    """Genera el envelope SOAP para obtener el archivo asociado."""
+
+    return f"""<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+<soapenv:Envelope xmlns:soapenv=\"{SOAP_ENVELOPE}\" xmlns:tem=\"{SOAP_NAMESPACE}\">
+    <soapenv:Header>
+        <tem:Authentication>
+            <tem:UsuarioClave>{USUARIO_CLAVE}</tem:UsuarioClave>
+            <tem:UsuarioNombre>{USUARIO_NOMBRE}</tem:UsuarioNombre>
+        </tem:Authentication>
+    </soapenv:Header>
+    <soapenv:Body>
+        <tem:ObtenerArchivoEstadoNotificacion>
+            <tem:idEstadoNotificacion>{estado_notificacion_id}</tem:idEstadoNotificacion>
+        </tem:ObtenerArchivoEstadoNotificacion>
+    </soapenv:Body>
+</soapenv:Envelope>"""
+
+
 def _host_soap(usar_test: bool) -> str:
     """Devuelve la URL base del servicio SOAP según el entorno."""
 
@@ -626,6 +646,98 @@ def _invocar_servicio(
     return ResultadoSOAP(codigo_seguimiento=codigo_seguimiento, xml_respuesta=xml_texto), None
 
 
+def _invocar_servicio_archivo(
+    estado_notificacion_id: str,
+    usar_test: bool,
+    timeout: int = 60,
+    max_reintentos: int = 3,
+) -> Tuple[Optional[str], Optional[str]]:
+    """Invoca el servicio SOAP para obtener el archivo asociado."""
+
+    url = f"{_host_soap(usar_test)}/services/wsNotificacion.asmx"
+    payload = _construir_xml_peticion_archivo(estado_notificacion_id)
+    headers = {
+        "Content-Type": "text/xml; charset=UTF-8",
+        "SOAPAction": SOAP_ACTION_ARCHIVO,
+    }
+
+    sesion = _obtener_sesion_soap(max_reintentos)
+
+    try:
+        _respetar_intervalo_solicitudes()
+        respuesta = sesion.post(
+            url,
+            data=payload,
+            headers=headers,
+            timeout=timeout,
+        )
+    except requests.RequestException as exc:
+        mensaje_error = f"{estado_notificacion_id}: error de red {exc}"
+        _log_step(
+            "_invocar_servicio_archivo",
+            "ERROR",
+            mensaje_error,
+        )
+        return None, mensaje_error
+
+    if respuesta is None:
+        mensaje_error = (
+            f"{estado_notificacion_id}: no se obtuvo respuesta del servicio de archivo"
+        )
+        _log_step(
+            "_invocar_servicio_archivo",
+            "ERROR",
+            mensaje_error,
+        )
+        return None, mensaje_error
+
+    if respuesta.status_code == 429:
+        retry_after = respuesta.headers.get("Retry-After")
+        segundos_espera = _segundos_retry_after(
+            retry_after,
+            referencia=datetime.now(timezone.utc),
+        )
+        mensaje_error = (
+            f"{estado_notificacion_id}: HTTP 429 Too Many Requests"
+            + (
+                f" (Retry-After: {retry_after}, {segundos_espera}s)"
+                if retry_after and segundos_espera is not None
+                else ""
+            )
+        )
+        _log_step(
+            "_invocar_servicio_archivo",
+            "ADVERTENCIA",
+            mensaje_error,
+        )
+        if segundos_espera:
+            time.sleep(segundos_espera)
+        return None, mensaje_error
+
+    if respuesta.status_code != 200:
+        mensaje_error = (
+            f"{estado_notificacion_id}: HTTP {respuesta.status_code} {respuesta.text}"
+        )
+        _log_step(
+            "_invocar_servicio_archivo",
+            "ERROR",
+            mensaje_error,
+        )
+        return None, mensaje_error
+
+    xml_texto = respuesta.text.strip()
+    if not xml_texto:
+        mensaje_error = f"{estado_notificacion_id}: respuesta vacía del servicio de archivo"
+        _log_step(
+            "_invocar_servicio_archivo",
+            "ADVERTENCIA",
+            mensaje_error,
+        )
+        return None, mensaje_error
+
+    return xml_texto, None
+
+
 def _formatear_xml_legible(xml_texto: str) -> str:
     """Devuelve el XML con indentación legible, o el original si falla."""
 
@@ -648,6 +760,30 @@ def _obtener_texto_xml(
     return texto if texto else None
 
 
+def _extraer_estado_notificacion_id(xml_respuesta: str) -> Optional[str]:
+    """Extrae el identificador de estado desde el XML del servicio SOAP."""
+
+    if not xml_respuesta:
+        return None
+
+    try:
+        root = ET.fromstring(xml_respuesta)
+    except ET.ParseError as exc:
+        _log_step(
+            "_extraer_estado_notificacion_id",
+            "ADVERTENCIA",
+            f"No se pudo parsear XML de estado: {exc}",
+        )
+        return None
+
+    nodo_estado = root.find(".//temp:EstadoNotificacionId", XML_NAMESPACES)
+    if nodo_estado is None or nodo_estado.text is None:
+        return None
+
+    estado_id = nodo_estado.text.strip()
+    return estado_id if estado_id else None
+
+
 def _extraer_datos_archivo(
     xml_respuesta: str,
 ) -> Optional[dict[str, Optional[str]]]:
@@ -666,48 +802,74 @@ def _extraer_datos_archivo(
         )
         return None
 
-    estado_seleccionado: dict[str, Optional[str]] = {}
-    for estado_node in root.findall(".//temp:EstadoNotificacion", XML_NAMESPACES):
-        archivo_id = _obtener_texto_xml(estado_node, "ArchivoId", XML_NAMESPACES)
-        archivo_nombre = _obtener_texto_xml(estado_node, "ArchivoNombre", XML_NAMESPACES)
-        archivo_contenido = _obtener_texto_xml(
-            estado_node, "ArchivoContenido", XML_NAMESPACES
-        )
-        if not archivo_contenido:
-            archivo_contenido = "NO HAY DATOS DEL ARCHIVO"
-        if archivo_id or archivo_nombre or archivo_contenido:
-            estado_id = _obtener_texto_xml(
-                estado_node, "EstadoNotificacionId", XML_NAMESPACES
-            )
-            estado_seleccionado = {
-                "estado_id": estado_id,
-                "archivo_id": archivo_id,
-                "archivo_nombre": archivo_nombre,
-                "archivo_contenido": archivo_contenido,
-            }
-            _log_step(
-                "_extraer_datos_archivo",
-                "INFO",
-                (
-                    "Datos de archivo obtenidos: "
-                    f"estado_id={estado_id}, "
-                    f"archivo_id={archivo_id}, "
-                    f"archivo_nombre={archivo_nombre}, "
-                    f"archivo_contenido={archivo_contenido}"
-                ),
-            )
+    archivo_id = None
+    archivo_nombre = None
+    archivo_contenido = None
 
-    return estado_seleccionado or None
+    nodo_archivo_id = root.find(".//temp:ArchivoId", XML_NAMESPACES)
+    if nodo_archivo_id is not None and nodo_archivo_id.text is not None:
+        archivo_id = nodo_archivo_id.text.strip() or None
+
+    nodo_archivo_nombre = root.find(".//temp:ArchivoNombre", XML_NAMESPACES)
+    if nodo_archivo_nombre is not None and nodo_archivo_nombre.text is not None:
+        archivo_nombre = nodo_archivo_nombre.text.strip() or None
+
+    nodo_archivo_contenido = root.find(".//temp:ArchivoContenido", XML_NAMESPACES)
+    if nodo_archivo_contenido is not None and nodo_archivo_contenido.text is not None:
+        archivo_contenido = nodo_archivo_contenido.text.strip() or None
+
+    if archivo_id is None and archivo_nombre is None and archivo_contenido is None:
+        return None
+
+    if not archivo_contenido:
+        archivo_contenido = "NO HAY DATOS DEL ARCHIVO"
+
+    _log_step(
+        "_extraer_datos_archivo",
+        "INFO",
+        (
+            "Datos de archivo obtenidos: "
+            f"archivo_id={archivo_id}, "
+            f"archivo_nombre={archivo_nombre}, "
+            f"archivo_contenido={archivo_contenido}"
+        ),
+    )
+
+    return {
+        "archivo_id": archivo_id,
+        "archivo_nombre": archivo_nombre,
+        "archivo_contenido": archivo_contenido,
+    }
 
 
 def _actualizar_datos_archivo(
     conn_pg: psycopg2.extensions.connection,
     envio: EnvioNotificacion,
     xml_respuesta: str,
+    usar_test: bool,
 ) -> bool:
     """Actualiza los datos de archivo en enviocedulanotificacionpolicia."""
 
-    datos_archivo = _extraer_datos_archivo(xml_respuesta)
+    estado_id = _extraer_estado_notificacion_id(xml_respuesta)
+    if not estado_id:
+        return False
+
+    xml_archivo, error_archivo = _invocar_servicio_archivo(
+        estado_id,
+        usar_test,
+    )
+    if error_archivo:
+        _log_step(
+            "_actualizar_datos_archivo",
+            "ADVERTENCIA",
+            f"{envio.codigoseguimientomp}: {error_archivo}",
+        )
+        return False
+
+    if not xml_archivo:
+        return False
+
+    datos_archivo = _extraer_datos_archivo(xml_archivo)
     if not datos_archivo:
         return False
 
@@ -726,9 +888,7 @@ def _actualizar_datos_archivo(
         cursor.execute(
             sentencia,
             (
-                int(datos_archivo["estado_id"])
-                if datos_archivo.get("estado_id")
-                else None,
+                int(estado_id),
                 int(datos_archivo["archivo_id"])
                 if datos_archivo.get("archivo_id")
                 else None,
@@ -1086,6 +1246,7 @@ def procesar_envios(
                                 conn_pg,
                                 envio,
                                 resultado.xml_respuesta,
+                                bandera_test,
                             )
                             if actualizado_archivo:
                                 codigos_actualizados_archivo.add(
