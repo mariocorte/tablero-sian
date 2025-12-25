@@ -27,7 +27,7 @@ def _imprimir_request(codigo: str, usar_test: bool) -> None:
     print("=== FIN REQUEST SOAP ===\n")
 
 
-def _construir_xml_archivo(estado_notificacion_id: str) -> str:
+def _construir_xml_archivo(archivo_id: str) -> str:
     """Genera el envelope SOAP para obtener el archivo asociado."""
 
     return f"""<?xml version=\"1.0\" encoding=\"UTF-8\"?>
@@ -40,15 +40,15 @@ def _construir_xml_archivo(estado_notificacion_id: str) -> str:
     </soapenv:Header>
     <soapenv:Body>
         <tem:ObtenerArchivoEstadoNotificacion>
-            <tem:estadoNotificacionId>{estado_notificacion_id}</tem:estadoNotificacionId>
+            <tem:estadoNotificacionId>{archivo_id}</tem:estadoNotificacionId>
         </tem:ObtenerArchivoEstadoNotificacion>
     </soapenv:Body>
 </soapenv:Envelope>"""
 
 
-def _imprimir_request_archivo(estado_notificacion_id: str, usar_test: bool) -> None:
+def _imprimir_request_archivo(archivo_id: str, usar_test: bool) -> None:
     url = f"{retornoxmlmp._host_soap(usar_test)}/services/wsNotificacion.asmx"
-    xml = _construir_xml_archivo(estado_notificacion_id)
+    xml = _construir_xml_archivo(archivo_id)
     print("=== REQUEST SOAP ARCHIVO ===")
     print(f"URL: {url}")
     print("Headers:")
@@ -92,13 +92,13 @@ def _texto_xml(nodo: ET.Element, tag: str) -> Optional[str]:
 
 
 def _invocar_servicio_archivo(
-    estado_notificacion_id: str,
+    archivo_id: str,
     usar_test: bool,
     timeout: int,
     max_reintentos: int,
 ) -> tuple[Optional[str], Optional[str]]:
     url = f"{retornoxmlmp._host_soap(usar_test)}/services/wsNotificacion.asmx"
-    payload = _construir_xml_archivo(estado_notificacion_id)
+    payload = _construir_xml_archivo(archivo_id)
     headers = {
         "Content-Type": "text/xml; charset=UTF-8",
         "SOAPAction": SOAP_ACTION_ARCHIVO,
@@ -167,6 +167,12 @@ def ejecutar_prueba(
             "no se invoca ObtenerArchivoEstadoNotificacion."
         )
         return
+    if not archivo_id:
+        print(
+            "\nNo se encontró ArchivoId en la respuesta; "
+            "no se invoca ObtenerArchivoEstadoNotificacion."
+        )
+        return
 
     print(
         "\n=== REFERENCIA ARCHIVO ===\n"
@@ -176,10 +182,10 @@ def ejecutar_prueba(
         "=== FIN REFERENCIA ARCHIVO ===\n"
     )
 
-    _imprimir_request_archivo(estado_id, usar_test)
+    _imprimir_request_archivo(archivo_id, usar_test)
 
     respuesta_archivo, error_archivo = _invocar_servicio_archivo(
-        estado_id,
+        archivo_id,
         usar_test,
         timeout,
         max_reintentos,
