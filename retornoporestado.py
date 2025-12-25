@@ -276,6 +276,7 @@ def _procesar_notificacion(
             envio,
             resultado.xml_respuesta,
             usar_test,
+            mostrar_llamado_archivo=True,
         )
     except Exception as exc:  # pragma: no cover - dependiente de la base real
         conn_pg.rollback()
