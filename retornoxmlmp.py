@@ -673,15 +673,29 @@ def _extraer_datos_archivo(
         archivo_contenido = _obtener_texto_xml(
             estado_node, "ArchivoContenido", XML_NAMESPACES
         )
+        if not archivo_contenido:
+            archivo_contenido = "NO HAY DATOS DEL ARCHIVO"
         if archivo_id or archivo_nombre or archivo_contenido:
+            estado_id = _obtener_texto_xml(
+                estado_node, "EstadoNotificacionId", XML_NAMESPACES
+            )
             estado_seleccionado = {
-                "estado_id": _obtener_texto_xml(
-                    estado_node, "EstadoNotificacionId", XML_NAMESPACES
-                ),
+                "estado_id": estado_id,
                 "archivo_id": archivo_id,
                 "archivo_nombre": archivo_nombre,
                 "archivo_contenido": archivo_contenido,
             }
+            _log_step(
+                "_extraer_datos_archivo",
+                "INFO",
+                (
+                    "Datos de archivo obtenidos: "
+                    f"estado_id={estado_id}, "
+                    f"archivo_id={archivo_id}, "
+                    f"archivo_nombre={archivo_nombre}, "
+                    f"archivo_contenido={archivo_contenido}"
+                ),
+            )
 
     return estado_seleccionado or None
 
