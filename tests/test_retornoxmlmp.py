@@ -32,6 +32,27 @@ XML_ARCHIVO = """<?xml version="1.0"?>
 </soapenv:Envelope>
 """
 
+XML_HISTORIAL = """<?xml version="1.0"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tem="http://tempuri.org/">
+  <soapenv:Body>
+    <tem:ObtenerEstadoNotificacionResponse>
+      <tem:ObtenerEstadoNotificacionResult>
+        <tem:HistorialEstados>
+          <tem:EstadoNotificacion>
+            <tem:EstadoNotificacionId>111</tem:EstadoNotificacionId>
+            <tem:Fecha>2025-10-21T16:45:38</tem:Fecha>
+          </tem:EstadoNotificacion>
+          <tem:EstadoNotificacion>
+            <tem:EstadoNotificacionId>222</tem:EstadoNotificacionId>
+            <tem:Fecha>2025-10-28T21:04:49</tem:Fecha>
+          </tem:EstadoNotificacion>
+        </tem:HistorialEstados>
+      </tem:ObtenerEstadoNotificacionResult>
+    </tem:ObtenerEstadoNotificacionResponse>
+  </soapenv:Body>
+</soapenv:Envelope>
+"""
+
 
 class RetornoXmlMpTests(unittest.TestCase):
     def test_invocar_servicio_devuelve_xml_y_datos_archivo(self):
@@ -67,6 +88,10 @@ class RetornoXmlMpTests(unittest.TestCase):
         estado_id = retornoxmlmp._extraer_estado_notificacion_id(resultado.xml_respuesta)
         self.assertEqual(estado_id, "123")
 
+    def test_extraer_estado_usa_ultimo_historial(self):
+        estado_id = retornoxmlmp._extraer_estado_notificacion_id(XML_HISTORIAL)
+        self.assertEqual(estado_id, "222")
+
         datos_archivo = retornoxmlmp._extraer_datos_archivo(XML_ARCHIVO)
         self.assertEqual(
             datos_archivo,
@@ -101,8 +126,8 @@ class RetornoXmlMpTests(unittest.TestCase):
             )
 
         self.assertTrue(actualizado)
-        cursor.execute.assert_called_once()
-        _, params = cursor.execute.call_args.args
+        self.assertEqual(cursor.execute.call_count, 2)
+        params = cursor.execute.call_args_list[0].args[1]
         self.assertEqual(
             params,
             (
@@ -110,11 +135,11 @@ class RetornoXmlMpTests(unittest.TestCase):
                 456,
                 "archivo.pdf",
                 "ABCDEF",
-                10,
-                20,
-                "correo@test.com",
+                "ABC123",
             ),
         )
+        historial_params = cursor.execute.call_args_list[1].args[1]
+        self.assertEqual(historial_params, ("ABCDEF", "ABC123", "ABC123"))
         conn_pg.commit.assert_called_once()
 
 
