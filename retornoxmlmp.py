@@ -760,6 +760,24 @@ def _obtener_texto_xml(
     return texto if texto else None
 
 
+def _parsear_fecha_xml(fecha_texto: Optional[str]) -> Optional[datetime]:
+    if not fecha_texto:
+        return None
+
+    valor = fecha_texto.strip()
+    if not valor:
+        return None
+
+    try:
+        fecha = datetime.fromisoformat(valor.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+    if fecha.tzinfo is not None:
+        return fecha.replace(tzinfo=None)
+    return fecha
+
+
 def _extraer_estado_notificacion_id(xml_respuesta: str) -> Optional[str]:
     """Extrae el identificador de estado desde el XML del servicio SOAP."""
 
@@ -775,6 +793,29 @@ def _extraer_estado_notificacion_id(xml_respuesta: str) -> Optional[str]:
             f"No se pudo parsear XML de estado: {exc}",
         )
         return None
+
+    estados = root.findall(
+        ".//temp:HistorialEstados/temp:EstadoNotificacion",
+        XML_NAMESPACES,
+    )
+    if estados:
+        candidatos: list[tuple[Optional[datetime], int, str]] = []
+        for indice, estado_node in enumerate(estados):
+            estado_id = _obtener_texto_xml(
+                estado_node, "EstadoNotificacionId", XML_NAMESPACES
+            )
+            if not estado_id:
+                continue
+            fecha_texto = _obtener_texto_xml(estado_node, "Fecha", XML_NAMESPACES)
+            fecha_estado = _parsear_fecha_xml(fecha_texto)
+            candidatos.append((fecha_estado, indice, estado_id))
+
+        if candidatos:
+            _, _, estado_id = max(
+                candidatos,
+                key=lambda item: (item[0] is not None, item[0] or datetime.min, item[1]),
+            )
+            return estado_id
 
     nodo_estado = root.find(".//temp:EstadoNotificacionId", XML_NAMESPACES)
     if nodo_estado is None or nodo_estado.text is None:
