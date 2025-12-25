@@ -4,16 +4,13 @@ from unittest import mock
 import retornoxmlmp
 
 
-XML_CON_ARCHIVO = """<?xml version="1.0"?>
+XML_CON_ESTADO = """<?xml version="1.0"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tem="http://tempuri.org/">
   <soapenv:Body>
     <tem:ObtenerEstadoNotificacionResponse>
       <tem:ObtenerEstadoNotificacionResult>
         <tem:EstadoNotificacion>
           <tem:EstadoNotificacionId>123</tem:EstadoNotificacionId>
-          <tem:ArchivoId>456</tem:ArchivoId>
-          <tem:ArchivoNombre>archivo.pdf</tem:ArchivoNombre>
-          <tem:ArchivoContenido>ABCDEF</tem:ArchivoContenido>
         </tem:EstadoNotificacion>
       </tem:ObtenerEstadoNotificacionResult>
     </tem:ObtenerEstadoNotificacionResponse>
@@ -21,10 +18,24 @@ XML_CON_ARCHIVO = """<?xml version="1.0"?>
 </soapenv:Envelope>
 """
 
+XML_ARCHIVO = """<?xml version="1.0"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tem="http://tempuri.org/">
+  <soapenv:Body>
+    <tem:ObtenerArchivoEstadoNotificacionResponse>
+      <tem:ObtenerArchivoEstadoNotificacionResult>
+        <tem:ArchivoId>456</tem:ArchivoId>
+        <tem:ArchivoNombre>archivo.pdf</tem:ArchivoNombre>
+        <tem:ArchivoContenido>ABCDEF</tem:ArchivoContenido>
+      </tem:ObtenerArchivoEstadoNotificacionResult>
+    </tem:ObtenerArchivoEstadoNotificacionResponse>
+  </soapenv:Body>
+</soapenv:Envelope>
+"""
+
 
 class RetornoXmlMpTests(unittest.TestCase):
     def test_invocar_servicio_devuelve_xml_y_datos_archivo(self):
-        respuesta = mock.Mock(status_code=200, text=XML_CON_ARCHIVO, headers={})
+        respuesta = mock.Mock(status_code=200, text=XML_CON_ESTADO, headers={})
         sesion = mock.Mock()
         sesion.post.return_value = respuesta
 
@@ -40,7 +51,7 @@ class RetornoXmlMpTests(unittest.TestCase):
 
         self.assertIsNone(error)
         self.assertIsNotNone(resultado)
-        self.assertEqual(resultado.xml_respuesta, XML_CON_ARCHIVO.strip())
+        self.assertEqual(resultado.xml_respuesta, XML_CON_ESTADO.strip())
         sesion.post.assert_called_once()
         called_url = sesion.post.call_args.args[0]
         self.assertEqual(
@@ -53,11 +64,13 @@ class RetornoXmlMpTests(unittest.TestCase):
             retornoxmlmp.SOAP_ACTION,
         )
 
-        datos_archivo = retornoxmlmp._extraer_datos_archivo(resultado.xml_respuesta)
+        estado_id = retornoxmlmp._extraer_estado_notificacion_id(resultado.xml_respuesta)
+        self.assertEqual(estado_id, "123")
+
+        datos_archivo = retornoxmlmp._extraer_datos_archivo(XML_ARCHIVO)
         self.assertEqual(
             datos_archivo,
             {
-                "estado_id": "123",
                 "archivo_id": "456",
                 "archivo_nombre": "archivo.pdf",
                 "archivo_contenido": "ABCDEF",
@@ -75,11 +88,17 @@ class RetornoXmlMpTests(unittest.TestCase):
         conn_pg = mock.MagicMock()
         cursor = conn_pg.cursor.return_value.__enter__.return_value
 
-        actualizado = retornoxmlmp._actualizar_datos_archivo(
-            conn_pg,
-            envio,
-            XML_CON_ARCHIVO,
-        )
+        with mock.patch.object(
+            retornoxmlmp,
+            "_invocar_servicio_archivo",
+            return_value=(XML_ARCHIVO, None),
+        ):
+            actualizado = retornoxmlmp._actualizar_datos_archivo(
+                conn_pg,
+                envio,
+                XML_CON_ESTADO,
+                usar_test=True,
+            )
 
         self.assertTrue(actualizado)
         cursor.execute.assert_called_once()
