@@ -90,7 +90,28 @@ def _obtener_notificaciones_por_estado(
             %s IS NULL
             OR COALESCE(env.laststagesian, '') <> COALESCE(ultimos.notpolhistoricompestado, '')
           )
-        ORDER BY ultimos.notpolhistoricompestadonid ASC NULLS LAST
+        UNION ALL
+        SELECT
+            TRIM(env.codigoseguimientomp) AS codigo_seguimiento,
+            env.pmovimientoid,
+            env.pactuacionid,
+            env.pdomicilioelectronicopj,
+            NULL AS notpolhistoricompfecha,
+            '' AS notpolhistoricompestado,
+            NULL AS notpolhistoricompestadonid,
+            NULL AS notpolhistoricomparchivoid,
+            env.laststagesian
+        FROM enviocedulanotificacionpolicia env
+        WHERE env.laststagesian = 'Sin info'
+          AND env.codigoseguimientomp IS NOT NULL
+          AND TRIM(env.codigoseguimientomp) <> ''
+          AND NOT EXISTS (
+              SELECT 1
+              FROM notpolhistoricomp historico
+              WHERE historico.codigoseguimientomp IS NOT NULL
+                AND TRIM(historico.codigoseguimientomp) = TRIM(env.codigoseguimientomp)
+          )
+        ORDER BY notpolhistoricompestadonid ASC NULLS LAST
     """
 
     with conn_pg.cursor(cursor_factory=extras.DictCursor) as cursor:
