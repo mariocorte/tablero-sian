@@ -241,6 +241,52 @@ def _obtener_ultimo_estado_desde_xml(xml_respuesta: str) -> Optional[str]:
     return (ultimo_estado.get("estado") or "").strip()
 
 
+def _obtener_estado_nuevo_para_consola(
+    xml_respuesta: str,
+    fecha_ultimo_estado: Optional[object],
+) -> Optional[str]:
+    """Obtiene el estado más reciente que se registraría según el historial."""
+
+    if not xml_respuesta:
+        return None
+
+    try:
+        root = ET.fromstring(xml_respuesta)
+    except ET.ParseError as exc:
+        _log_step(
+            "procesar_por_estado",
+            "ADVERTENCIA",
+            f"No se pudo parsear el XML de respuesta: {exc}",
+        )
+        return None
+
+    namespaces = {
+        "soap": "http://schemas.xmlsoap.org/soap/envelope/",
+        "temp": "http://tempuri.org/",
+    }
+    estados = root.findall(
+        ".//temp:HistorialEstados/temp:EstadoNotificacion", namespaces
+    )
+    if not estados:
+        return None
+
+    estados_normalizados = historialsian._normalizar_estados(estados, namespaces)
+    if not estados_normalizados:
+        return None
+
+    estados_filtrados = historialsian._filtrar_estados_nuevos(
+        estados_normalizados, fecha_ultimo_estado
+    )
+    if estados_filtrados:
+        return (estados_filtrados[-1].get("estado") or "").strip()
+
+    ultimo_estado = historialsian._obtener_estado_mas_reciente(estados_normalizados)
+    if ultimo_estado is None:
+        return None
+
+    return (ultimo_estado.get("estado") or "").strip()
+
+
 def _obtener_archivo_id_ultimo_estado(xml_respuesta: str) -> Optional[str]:
     """Extrae el archivo asociado al último estado desde el XML del servicio."""
 
@@ -325,7 +371,9 @@ def _procesar_notificacion(
     notificacion: NotificacionPendiente,
     estado_objetivo: Optional[str],
     usar_test: bool,
-) -> tuple[Optional[retornoxmlmp.ResultadoSOAP], bool, Optional[str], Optional[str]]:
+) -> tuple[
+    Optional[retornoxmlmp.ResultadoSOAP], bool, Optional[str], Optional[str], Optional[str]
+]:
     """Invoca el servicio SOAP y dispara la actualización del historial."""
 
     _log_step(
@@ -364,7 +412,7 @@ def _procesar_notificacion(
             "ERROR",
             mensaje_error,
         )
-        return None, False, None, None
+        return None, False, None, None, None
 
     if resultado is None:
         _log_step(
@@ -372,9 +420,13 @@ def _procesar_notificacion(
             "ADVERTENCIA",
             f"Sin resultado para {notificacion.codigo_seguimiento}",
         )
-        return None, False, None, None
+        return None, False, None, None, None
 
     ultimo_estado_xml = _obtener_ultimo_estado_desde_xml(resultado.xml_respuesta)
+    estado_nuevo_consola = _obtener_estado_nuevo_para_consola(
+        resultado.xml_respuesta,
+        notificacion.fecha_ultimo_estado,
+    )
     archivo_id_xml = _obtener_archivo_id_ultimo_estado(resultado.xml_respuesta)
     tiene_archivo_xml = archivo_id_xml is not None
 
@@ -399,7 +451,7 @@ def _procesar_notificacion(
             "ERROR",
             f"{notificacion.codigo_seguimiento}: no se pudo almacenar el XML: {exc}",
         )
-        return None, False, None, ultimo_estado_xml
+        return None, False, None, ultimo_estado_xml, estado_nuevo_consola
 
     estado_objetivo_norm = (estado_objetivo or "").strip().lower()
     estado_xml_norm = (ultimo_estado_xml or "").strip().lower()
@@ -443,7 +495,7 @@ def _procesar_notificacion(
                     f"no se pudo actualizar archivo: {exc}"
                 ),
             )
-            return None, False, None, ultimo_estado_xml
+            return None, False, None, ultimo_estado_xml, estado_nuevo_consola
         archivo_datos = _obtener_datos_archivo(conn_pg, notificacion.codigo_seguimiento)
     _log_step(
         "procesar_por_estado",
@@ -451,18 +503,24 @@ def _procesar_notificacion(
         f"Actualización completada para {notificacion.codigo_seguimiento}",
     )
 
-    return resultado, requiere_actualizacion or archivo_actualizado, archivo_datos, ultimo_estado_xml
+    return (
+        resultado,
+        requiere_actualizacion or archivo_actualizado,
+        archivo_datos,
+        ultimo_estado_xml,
+        estado_nuevo_consola,
+    )
 
 
 def _imprimir_resultado_en_consola(
     notificacion: NotificacionPendiente,
     datos_archivo: Optional[str],
-    ultimo_estado_xml: Optional[str],
+    estado_nuevo: Optional[str],
 ) -> None:
     """Muestra los datos clave solicitados en consola."""
 
     archivo_texto = datos_archivo or ""
-    estado_nuevo = (ultimo_estado_xml or "").strip()
+    estado_nuevo = (estado_nuevo or "").strip()
     print(
         "codigoseguimientomp={codigo}, notpolhistoricompestado={estado}, "
         "estado_anterior_laststage={laststage}, estado_nuevo={estado_nuevo}, "
@@ -512,7 +570,13 @@ def procesar_por_estado(
 
         codigos_actualizados: List[str] = []
         for notificacion in notificaciones:
-            resultado, actualizado, archivo_datos, ultimo_estado_xml = _procesar_notificacion(
+            (
+                resultado,
+                actualizado,
+                archivo_datos,
+                _ultimo_estado_xml,
+                estado_nuevo_consola,
+            ) = _procesar_notificacion(
                 conn_pg,
                 conn_panel,
                 notificacion,
@@ -523,7 +587,7 @@ def procesar_por_estado(
                 _imprimir_resultado_en_consola(
                     notificacion,
                     archivo_datos,
-                    ultimo_estado_xml,
+                    estado_nuevo_consola,
                 )
             if actualizado:
                 codigos_actualizados.append(notificacion.codigo_seguimiento)
