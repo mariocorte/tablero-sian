@@ -77,7 +77,10 @@ def _obtener_notificaciones_por_estado(
             WHERE codigoseguimientomp IS NOT NULL
               AND TRIM(codigoseguimientomp) <> ''
             ORDER BY TRIM(codigoseguimientomp),
-                     notpolhistoricompfecha DESC NULLS LAST,
+                     to_timestamp(
+                         left(replace(notpolhistoricompfecha, 'T', ' '), 19),
+                         'YYYY-MM-DD HH24:MI:SS'
+                     ) DESC NULLS LAST,
                      notpolhistoricompestadonid DESC NULLS LAST
         ) AS ultimos
         JOIN enviocedulanotificacionpolicia env
@@ -145,7 +148,10 @@ def _contar_por_estado(
             WHERE codigoseguimientomp IS NOT NULL
               AND TRIM(codigoseguimientomp) <> ''
             ORDER BY TRIM(codigoseguimientomp),
-                     notpolhistoricompfecha DESC NULLS LAST,
+                     to_timestamp(
+                         left(replace(notpolhistoricompfecha, 'T', ' '), 19),
+                         'YYYY-MM-DD HH24:MI:SS'
+                     ) DESC NULLS LAST,
                      notpolhistoricompestadonid DESC NULLS LAST
         ) AS ultimos
         WHERE (%s IS NULL OR LOWER(estado) = LOWER(%s))
@@ -216,7 +222,10 @@ def _obtener_datos_archivo(
         WHERE TRIM(codigoseguimientomp) = TRIM(%s)
           AND notpolhistoricomparchivoid IS NOT NULL
           AND notpolhistoricomparchivoid <> 0
-        ORDER BY notpolhistoricompfecha DESC NULLS LAST
+        ORDER BY to_timestamp(
+            left(replace(notpolhistoricompfecha, 'T', ' '), 19),
+            'YYYY-MM-DD HH24:MI:SS'
+        ) DESC NULLS LAST
         LIMIT 1
     """
 
