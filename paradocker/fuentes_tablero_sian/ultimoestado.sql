@@ -24,7 +24,11 @@ BEGIN
     WHERE n.pmovimientoid = p_pmovimientoid
       AND n.pactuacionid = p_pactuacionid
       AND n.pdomicilioelectronicopj = p_pdomicilioelectronicopj
-    ORDER BY n.notpolhistoricompfecha DESC
+    ORDER BY to_timestamp(
+        left(replace(n.notpolhistoricompfecha, 'T', ' '), 19),
+        'YYYY-MM-DD HH24:MI:SS'
+    ) DESC NULLS LAST,
+    n.notpolhistoricompestadonid DESC NULLS LAST
     LIMIT 1;
 END;
 $$;
