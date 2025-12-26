@@ -52,78 +52,93 @@ def _obtener_notificaciones_por_estado(
 ) -> List[NotificacionPendiente]:
     """Devuelve las notificaciones filtradas por el último estado cuando aplica."""
 
-    consulta = """
-        SELECT
-            ultimos.codigo_seguimiento,
-            env.pmovimientoid,
-            env.pactuacionid,
-            env.pdomicilioelectronicopj,
-            ultimos.notpolhistoricompfecha,
-            ultimos.notpolhistoricompestado,
-            ultimos.notpolhistoricompestadonid,
-            ultimos.notpolhistoricomparchivoid,
-            env.laststagesian
-        FROM (
-            SELECT DISTINCT ON (TRIM(codigoseguimientomp))
-                TRIM(codigoseguimientomp) AS codigo_seguimiento,
-                pmovimientoid,
-                pactuacionid,
-                pdomicilioelectronicopj,
-                notpolhistoricompfecha,
-                notpolhistoricompestado,
-                notpolhistoricompestadonid,
-                notpolhistoricomparchivoid
-            FROM notpolhistoricomp
-            WHERE codigoseguimientomp IS NOT NULL
-              AND TRIM(codigoseguimientomp) <> ''
-            ORDER BY TRIM(codigoseguimientomp),
-                     to_timestamp(
-                         left(replace(notpolhistoricompfecha, 'T', ' '), 19),
-                         'YYYY-MM-DD HH24:MI:SS'
-                     ) DESC NULLS LAST,
-                     notpolhistoricompestadonid DESC NULLS LAST
-        ) AS ultimos
-        JOIN enviocedulanotificacionpolicia env
-          ON TRIM(env.codigoseguimientomp) = ultimos.codigo_seguimiento
-        WHERE (%s IS NULL OR LOWER(ultimos.notpolhistoricompestado) = LOWER(%s))
-          AND (
-            %s IS NULL
-            OR COALESCE(env.laststagesian, '') <> COALESCE(ultimos.notpolhistoricompestado, '')
-          )
-        UNION ALL
-        SELECT
-            TRIM(env.codigoseguimientomp) AS codigo_seguimiento,
-            env.pmovimientoid,
-            env.pactuacionid,
-            env.pdomicilioelectronicopj,
-            NULL AS notpolhistoricompfecha,
-            '' AS notpolhistoricompestado,
-            NULL AS notpolhistoricompestadonid,
-            NULL AS notpolhistoricomparchivoid,
-            env.laststagesian
-        FROM enviocedulanotificacionpolicia env
-        WHERE env.laststagesian = 'Sin info'
-          AND env.codigoseguimientomp IS NOT NULL
-          AND TRIM(env.codigoseguimientomp) <> ''
-          AND NOT EXISTS (
-              SELECT 1
-              FROM notpolhistoricomp historico
-              WHERE historico.codigoseguimientomp IS NOT NULL
-                AND TRIM(historico.codigoseguimientomp) = TRIM(env.codigoseguimientomp)
-          )
-        ORDER BY notpolhistoricompestadonid ASC NULLS LAST
-    """
+    if estado_objetivo:
+        consulta = """
+            WITH ultimo_estado AS (
+                SELECT DISTINCT ON (TRIM(codigoseguimientomp))
+                    TRIM(codigoseguimientomp) AS codigoseguimientomp,
+                    notpolhistoricompfecha,
+                    notpolhistoricompestado,
+                    notpolhistoricompestadonid,
+                    notpolhistoricomparchivoid
+                FROM notpolhistoricomp
+                WHERE codigoseguimientomp IS NOT NULL
+                  AND TRIM(codigoseguimientomp) <> ''
+                ORDER BY TRIM(codigoseguimientomp),
+                         to_timestamp(
+                             left(replace(notpolhistoricompfecha, 'T', ' '), 19),
+                             'YYYY-MM-DD HH24:MI:SS'
+                         ) DESC NULLS LAST,
+                         notpolhistoricompestadonid DESC NULLS LAST
+            )
+            SELECT
+                TRIM(env.codigoseguimientomp) AS codigo_seguimiento,
+                env.pmovimientoid,
+                env.pactuacionid,
+                env.pdomicilioelectronicopj,
+                ultimo_estado.notpolhistoricompfecha,
+                ultimo_estado.notpolhistoricompestado,
+                ultimo_estado.notpolhistoricompestadonid,
+                ultimo_estado.notpolhistoricomparchivoid,
+                env.laststagesian
+            FROM enviocedulanotificacionpolicia env
+            LEFT JOIN ultimo_estado
+              ON TRIM(env.codigoseguimientomp) = ultimo_estado.codigoseguimientomp
+            WHERE env.codigoseguimientomp IS NOT NULL
+              AND TRIM(env.codigoseguimientomp) <> ''
+              AND (
+                LOWER(COALESCE(ultimo_estado.notpolhistoricompestado, '')) = LOWER(%s)
+                OR LOWER(COALESCE(env.laststagesian, '')) = LOWER(%s)
+              )
+            ORDER BY TRIM(env.codigoseguimientomp)
+        """
+    else:
+        consulta = """
+            WITH ultimo_estado AS (
+                SELECT DISTINCT ON (TRIM(codigoseguimientomp))
+                    TRIM(codigoseguimientomp) AS codigoseguimientomp,
+                    notpolhistoricompfecha,
+                    notpolhistoricompestado,
+                    notpolhistoricompestadonid,
+                    notpolhistoricomparchivoid
+                FROM notpolhistoricomp
+                WHERE codigoseguimientomp IS NOT NULL
+                  AND TRIM(codigoseguimientomp) <> ''
+                ORDER BY TRIM(codigoseguimientomp),
+                         to_timestamp(
+                             left(replace(notpolhistoricompfecha, 'T', ' '), 19),
+                             'YYYY-MM-DD HH24:MI:SS'
+                         ) DESC NULLS LAST,
+                         notpolhistoricompestadonid DESC NULLS LAST
+            )
+            SELECT
+                TRIM(env.codigoseguimientomp) AS codigo_seguimiento,
+                env.pmovimientoid,
+                env.pactuacionid,
+                env.pdomicilioelectronicopj,
+                ultimo_estado.notpolhistoricompfecha,
+                ultimo_estado.notpolhistoricompestado,
+                ultimo_estado.notpolhistoricompestadonid,
+                ultimo_estado.notpolhistoricomparchivoid,
+                env.laststagesian
+            FROM enviocedulanotificacionpolicia env
+            LEFT JOIN ultimo_estado
+              ON TRIM(env.codigoseguimientomp) = ultimo_estado.codigoseguimientomp
+            WHERE env.codigoseguimientomp IS NOT NULL
+              AND TRIM(env.codigoseguimientomp) <> ''
+              AND (
+                ultimo_estado.codigoseguimientomp IS NULL
+                OR COALESCE(env.laststagesian, '') <> COALESCE(ultimo_estado.notpolhistoricompestado, '')
+              )
+            ORDER BY TRIM(env.codigoseguimientomp)
+        """
 
     with conn_pg.cursor(cursor_factory=extras.DictCursor) as cursor:
         estado_normalizado = estado_objetivo.strip() if estado_objetivo else None
-        cursor.execute(
-            consulta,
-            (
-                estado_normalizado,
-                estado_normalizado,
-                estado_normalizado,
-            ),
-        )
+        if estado_normalizado:
+            cursor.execute(consulta, (estado_normalizado, estado_normalizado))
+        else:
+            cursor.execute(consulta)
         filas = cursor.fetchall()
 
     notificaciones: List[NotificacionPendiente] = []
@@ -362,24 +377,6 @@ def _procesar_notificacion(
     ultimo_estado_xml = _obtener_ultimo_estado_desde_xml(resultado.xml_respuesta)
     archivo_id_xml = _obtener_archivo_id_ultimo_estado(resultado.xml_respuesta)
     tiene_archivo_xml = archivo_id_xml is not None
-    if ultimo_estado_xml is not None and estado_objetivo:
-        coincide_objetivo = (
-            ultimo_estado_xml.strip().lower() == estado_objetivo.strip().lower()
-        )
-        coincide_bd = (
-            ultimo_estado_xml.strip().lower()
-            == (notificacion.estado_ultimo or "").strip().lower()
-        )
-        if coincide_objetivo and coincide_bd:
-            _log_step(
-                "procesar_por_estado",
-                "OK",
-                (
-                    f"{notificacion.codigo_seguimiento}: último estado '{ultimo_estado_xml}' "
-                    f"coincide con '{estado_objetivo}', se omite actualización."
-                ),
-            )
-            return resultado, False, None, ultimo_estado_xml
 
     envio = retornoxmlmp.EnvioNotificacion(
         id_envio=0,
@@ -404,10 +401,33 @@ def _procesar_notificacion(
         )
         return None, False, None, ultimo_estado_xml
 
+    estado_objetivo_norm = (estado_objetivo or "").strip().lower()
+    estado_xml_norm = (ultimo_estado_xml or "").strip().lower()
+    estado_hist_norm = (notificacion.estado_ultimo or "").strip().lower()
+    estado_env_norm = (notificacion.estado_envio or "").strip().lower()
+
+    requiere_actualizacion = estado_objetivo is None
+    if estado_xml_norm:
+        if estado_objetivo_norm and estado_xml_norm != estado_objetivo_norm:
+            requiere_actualizacion = True
+        if estado_xml_norm != estado_hist_norm:
+            requiere_actualizacion = True
+        if estado_xml_norm != estado_env_norm:
+            requiere_actualizacion = True
+    if tiene_archivo_xml and not notificacion.tiene_archivo:
+        requiere_actualizacion = True
+
+    if requiere_actualizacion:
+        with _silenciar_salida_consola():
+            historialsian.pre_historial(
+                codigodeseguimientomp=notificacion.codigo_seguimiento
+            )
+
     archivo_datos: Optional[str] = None
+    archivo_actualizado = False
     if notificacion.tiene_archivo or tiene_archivo_xml:
         try:
-            retornoxmlmp._actualizar_datos_archivo(
+            archivo_actualizado = retornoxmlmp._actualizar_datos_archivo(
                 conn_pg,
                 envio,
                 resultado.xml_respuesta,
@@ -425,16 +445,13 @@ def _procesar_notificacion(
             )
             return None, False, None, ultimo_estado_xml
         archivo_datos = _obtener_datos_archivo(conn_pg, notificacion.codigo_seguimiento)
-
-    with _silenciar_salida_consola():
-        historialsian.pre_historial(codigodeseguimientomp=notificacion.codigo_seguimiento)
     _log_step(
         "procesar_por_estado",
         "OK",
         f"Actualización completada para {notificacion.codigo_seguimiento}",
     )
 
-    return resultado, True, archivo_datos, ultimo_estado_xml
+    return resultado, requiere_actualizacion or archivo_actualizado, archivo_datos, ultimo_estado_xml
 
 
 def _imprimir_resultado_en_consola(
