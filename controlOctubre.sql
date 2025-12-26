@@ -21,12 +21,12 @@ ordenado AS (
         row_number() OVER (
             PARTITION BY h.codigoseguimientomp
             ORDER BY h.notpolhistoricompfecha_ts ASC NULLS LAST,
-                     h.notpolhistoricompestadonid ASC NULLS LAST
+                     h.notpolhistoricompestado ASC NULLS LAST
         ) AS rn_asc,
         row_number() OVER (
             PARTITION BY h.codigoseguimientomp
             ORDER BY h.notpolhistoricompfecha_ts DESC NULLS LAST,
-                     h.notpolhistoricompestadonid DESC NULLS LAST
+                     h.notpolhistoricompestado DESC NULLS LAST
         ) AS rn_desc
     FROM historico AS h
 ),
