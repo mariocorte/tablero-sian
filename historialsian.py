@@ -271,7 +271,7 @@ def pre_historial(codigodeseguimientomp: Optional[str] = None):
                         )
                         continue
 
-                    codigoseguimiento, fecha_ultima = datos_envio
+                    codigoseguimiento, _fecha_ultima_envio = datos_envio
                     if codigo_filtrado is not None and (
                         (codigoseguimiento or "").strip() != codigo_filtrado
                     ):
@@ -284,6 +284,12 @@ def pre_historial(codigodeseguimientomp: Optional[str] = None):
                             ),
                         )
                         continue
+
+                    fecha_historial = _obtener_fecha_historial(
+                        conexion_pg,
+                        codigoseguimiento,
+                    )
+                    fecha_ultima = fecha_historial if fecha_historial is not None else None
                     exito = llamar_his_mp(
                         pmovimientoid,
                         pactuacionid,
@@ -440,6 +446,36 @@ def _obtener_datos_envio(
     if not fila:
         return None
     return fila[0], fila[1]
+
+
+def _obtener_fecha_historial(
+    conexion_pg: psycopg2.extensions.connection,
+    codigo_seguimiento: str,
+) -> Optional[datetime]:
+    """Obtiene la última fecha registrada en notpolhistoricomp para el código."""
+
+    consulta = """
+        SELECT to_timestamp(
+            left(replace(notpolhistoricompfecha, 'T', ' '), 19),
+            'YYYY-MM-DD HH24:MI:SS'
+        )
+        FROM notpolhistoricomp
+        WHERE codigoseguimientomp IS NOT NULL
+          AND TRIM(codigoseguimientomp) = TRIM(%s)
+        ORDER BY to_timestamp(
+            left(replace(notpolhistoricompfecha, 'T', ' '), 19),
+            'YYYY-MM-DD HH24:MI:SS'
+        ) DESC NULLS LAST
+        LIMIT 1
+    """
+
+    with conexion_pg.cursor() as cursor:
+        cursor.execute(consulta, (codigo_seguimiento,))
+        fila = cursor.fetchone()
+
+    if not fila:
+        return None
+    return fila[0]
 
 
 def _marcar_retornomp_procesado(
