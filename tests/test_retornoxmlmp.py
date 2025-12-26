@@ -53,6 +53,34 @@ XML_HISTORIAL = """<?xml version="1.0"?>
 </soapenv:Envelope>
 """
 
+XML_HISTORIAL_ARCHIVO = """<?xml version="1.0"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tem="http://tempuri.org/">
+  <soapenv:Body>
+    <tem:ObtenerEstadoNotificacionResponse>
+      <tem:ObtenerEstadoNotificacionResult>
+        <tem:HistorialEstados>
+          <tem:EstadoNotificacion>
+            <tem:EstadoNotificacionId>111</tem:EstadoNotificacionId>
+            <tem:Fecha>2025-10-21T16:45:38</tem:Fecha>
+            <tem:ArchivoId>0</tem:ArchivoId>
+          </tem:EstadoNotificacion>
+          <tem:EstadoNotificacion>
+            <tem:EstadoNotificacionId>333</tem:EstadoNotificacionId>
+            <tem:Fecha>2025-10-27T11:00:00</tem:Fecha>
+            <tem:ArchivoId>999</tem:ArchivoId>
+          </tem:EstadoNotificacion>
+          <tem:EstadoNotificacion>
+            <tem:EstadoNotificacionId>222</tem:EstadoNotificacionId>
+            <tem:Fecha>2025-10-28T21:04:49</tem:Fecha>
+            <tem:ArchivoId>0</tem:ArchivoId>
+          </tem:EstadoNotificacion>
+        </tem:HistorialEstados>
+      </tem:ObtenerEstadoNotificacionResult>
+    </tem:ObtenerEstadoNotificacionResponse>
+  </soapenv:Body>
+</soapenv:Envelope>
+"""
+
 
 class RetornoXmlMpTests(unittest.TestCase):
     def test_invocar_servicio_devuelve_xml_y_datos_archivo(self):
@@ -101,6 +129,10 @@ class RetornoXmlMpTests(unittest.TestCase):
                 "archivo_contenido": "ABCDEF",
             },
         )
+
+    def test_extraer_estado_prioriza_historial_con_archivo(self):
+        estado_id = retornoxmlmp._extraer_estado_notificacion_id(XML_HISTORIAL_ARCHIVO)
+        self.assertEqual(estado_id, "333")
 
     def test_actualizar_datos_archivo_actualiza_bd(self):
         envio = retornoxmlmp.EnvioNotificacion(
