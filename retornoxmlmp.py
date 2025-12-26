@@ -800,6 +800,7 @@ def _extraer_estado_notificacion_id(xml_respuesta: str) -> Optional[str]:
     )
     if estados:
         candidatos: list[tuple[Optional[datetime], int, str]] = []
+        candidatos_archivo: list[tuple[Optional[datetime], int, str]] = []
         for indice, estado_node in enumerate(estados):
             estado_id = _obtener_texto_xml(
                 estado_node, "EstadoNotificacionId", XML_NAMESPACES
@@ -809,6 +810,17 @@ def _extraer_estado_notificacion_id(xml_respuesta: str) -> Optional[str]:
             fecha_texto = _obtener_texto_xml(estado_node, "Fecha", XML_NAMESPACES)
             fecha_estado = _parsear_fecha_xml(fecha_texto)
             candidatos.append((fecha_estado, indice, estado_id))
+
+            archivo_id = _obtener_texto_xml(estado_node, "ArchivoId", XML_NAMESPACES)
+            if archivo_id and archivo_id != "0":
+                candidatos_archivo.append((fecha_estado, indice, estado_id))
+
+        if candidatos_archivo:
+            _, _, estado_id = max(
+                candidatos_archivo,
+                key=lambda item: (item[0] is not None, item[0] or datetime.min, item[1]),
+            )
+            return estado_id
 
         if candidatos:
             _, _, estado_id = max(

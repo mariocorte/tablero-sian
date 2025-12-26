@@ -205,6 +205,46 @@ def _obtener_ultimo_estado_desde_xml(xml_respuesta: str) -> Optional[str]:
     return (ultimo_estado.get("estado") or "").strip()
 
 
+def _obtener_archivo_id_ultimo_estado(xml_respuesta: str) -> Optional[str]:
+    """Extrae el archivo asociado al último estado desde el XML del servicio."""
+
+    if not xml_respuesta:
+        return None
+
+    try:
+        root = ET.fromstring(xml_respuesta)
+    except ET.ParseError as exc:
+        _log_step(
+            "procesar_por_estado",
+            "ADVERTENCIA",
+            f"No se pudo parsear el XML de respuesta: {exc}",
+        )
+        return None
+
+    namespaces = {
+        "soap": "http://schemas.xmlsoap.org/soap/envelope/",
+        "temp": "http://tempuri.org/",
+    }
+    estados = root.findall(
+        ".//temp:HistorialEstados/temp:EstadoNotificacion", namespaces
+    )
+    if not estados:
+        return None
+
+    estados_normalizados = historialsian._normalizar_estados(estados, namespaces)
+    if not estados_normalizados:
+        return None
+
+    ultimo_estado = historialsian._obtener_estado_mas_reciente(estados_normalizados)
+    if ultimo_estado is None:
+        return None
+
+    archivo_id = (ultimo_estado.get("archivo_id") or "").strip()
+    if not archivo_id or archivo_id == "0":
+        return None
+    return archivo_id
+
+
 def _obtener_datos_archivo(
     conn_pg: psycopg2.extensions.connection, codigo_seguimiento: str
 ) -> Optional[str]:
@@ -299,6 +339,8 @@ def _procesar_notificacion(
         return None, False, None, None
 
     ultimo_estado_xml = _obtener_ultimo_estado_desde_xml(resultado.xml_respuesta)
+    archivo_id_xml = _obtener_archivo_id_ultimo_estado(resultado.xml_respuesta)
+    tiene_archivo_xml = archivo_id_xml is not None
     if ultimo_estado_xml is not None and estado_objetivo:
         coincide_objetivo = (
             ultimo_estado_xml.strip().lower() == estado_objetivo.strip().lower()
@@ -342,7 +384,7 @@ def _procesar_notificacion(
         return None, False, None, ultimo_estado_xml
 
     archivo_datos: Optional[str] = None
-    if notificacion.tiene_archivo:
+    if notificacion.tiene_archivo or tiene_archivo_xml:
         try:
             retornoxmlmp._actualizar_datos_archivo(
                 conn_pg,
