@@ -1,5 +1,7 @@
 -- Lista los registros cuyo primer estado fue en octubre de 2025 (Pendiente)
 -- y devuelve el primer y último estado por codigo de seguimiento.
+-- Exporta el resultado a un TXT con separador TAB y encabezados.
+\copy (
 WITH historico AS (
     SELECT
         n.codigoseguimientomp,
@@ -70,4 +72,6 @@ WHERE p.primer_estado = 'Pendiente'
   AND p.fecha_primer_estado::date >= DATE '2025-10-01'
   AND p.fecha_primer_estado::date < DATE '2025-11-01'
 ORDER BY p.fecha_primer_estado::date,
-         p.codigoseguimientomp;
+         p.codigoseguimientomp
+) TO 'control_resultado.txt'
+  WITH (FORMAT csv, DELIMITER E'\t', HEADER true);
