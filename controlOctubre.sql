@@ -5,6 +5,10 @@ WITH historico AS (
         n.codigoseguimientomp,
         n.notpolhistoricompfecha,
         n.notpolhistoricompestado,
+        n.notpolhistoricompresponsable,
+        n.notpolhistoricompdependencia,
+        n.pactuacionid,
+        n.pdomicilioelectronicopj,
         to_timestamp(
             left(replace(n.notpolhistoricompfecha, 'T', ' '), 19),
             'YYYY-MM-DD HH24:MI:SS'
@@ -30,7 +34,8 @@ primeros AS (
     SELECT
         o.codigoseguimientomp,
         o.notpolhistoricompfecha AS fecha_primer_estado,
-        o.notpolhistoricompestado AS primer_estado
+        o.notpolhistoricompestado AS primer_estado,
+        o.notpolhistoricompfecha_ts AS fecha_primer_estado_ts
     FROM ordenado AS o
     WHERE o.rn_asc = 1
 ),
@@ -38,7 +43,12 @@ ultimos AS (
     SELECT
         o.codigoseguimientomp,
         o.notpolhistoricompfecha AS fecha_ultimo_estado,
-        o.notpolhistoricompestado AS ultimo_estado
+        o.notpolhistoricompestado AS ultimo_estado,
+        o.notpolhistoricompresponsable,
+        o.notpolhistoricompdependencia,
+        o.pactuacionid,
+        o.pdomicilioelectronicopj,
+        o.notpolhistoricompfecha_ts AS fecha_ultimo_estado_ts
     FROM ordenado AS o
     WHERE o.rn_desc = 1
 )
@@ -47,7 +57,12 @@ SELECT
     p.fecha_primer_estado,
     p.primer_estado,
     u.fecha_ultimo_estado,
-    u.ultimo_estado
+    u.ultimo_estado,
+    u.notpolhistoricompresponsable,
+    u.notpolhistoricompdependencia,
+    u.pactuacionid,
+    u.pdomicilioelectronicopj,
+    (u.fecha_ultimo_estado_ts::date - p.fecha_primer_estado_ts::date) AS diferencia_dias
 FROM primeros AS p
 JOIN ultimos AS u
     ON u.codigoseguimientomp = p.codigoseguimientomp
