@@ -76,7 +76,9 @@ def _obtener_notificaciones_por_estado(
             FROM notpolhistoricomp
             WHERE codigoseguimientomp IS NOT NULL
               AND TRIM(codigoseguimientomp) <> ''
-            ORDER BY TRIM(codigoseguimientomp), notpolhistoricompfecha DESC NULLS LAST
+            ORDER BY TRIM(codigoseguimientomp),
+                     notpolhistoricompfecha DESC NULLS LAST,
+                     notpolhistoricompestadonid DESC NULLS LAST
         ) AS ultimos
         JOIN enviocedulanotificacionpolicia env
           ON TRIM(env.codigoseguimientomp) = ultimos.codigo_seguimiento
@@ -142,7 +144,9 @@ def _contar_por_estado(
             FROM notpolhistoricomp
             WHERE codigoseguimientomp IS NOT NULL
               AND TRIM(codigoseguimientomp) <> ''
-            ORDER BY TRIM(codigoseguimientomp), notpolhistoricompfecha DESC NULLS LAST
+            ORDER BY TRIM(codigoseguimientomp),
+                     notpolhistoricompfecha DESC NULLS LAST,
+                     notpolhistoricompestadonid DESC NULLS LAST
         ) AS ultimos
         WHERE (%s IS NULL OR LOWER(estado) = LOWER(%s))
           AND notpolhistoricompfecha::date < CURRENT_DATE
