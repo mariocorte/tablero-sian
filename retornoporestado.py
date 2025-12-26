@@ -236,7 +236,7 @@ def _procesar_notificacion(
     notificacion: NotificacionPendiente,
     estado_objetivo: Optional[str],
     usar_test: bool,
-) -> tuple[Optional[retornoxmlmp.ResultadoSOAP], bool, Optional[str]]:
+) -> tuple[Optional[retornoxmlmp.ResultadoSOAP], bool, Optional[str], Optional[str]]:
     """Invoca el servicio SOAP y dispara la actualización del historial."""
 
     _log_step(
@@ -275,7 +275,7 @@ def _procesar_notificacion(
             "ERROR",
             mensaje_error,
         )
-            return None, False, None
+        return None, False, None, None
 
     if resultado is None:
         _log_step(
@@ -283,11 +283,18 @@ def _procesar_notificacion(
             "ADVERTENCIA",
             f"Sin resultado para {notificacion.codigo_seguimiento}",
         )
-        return None, False, None
+        return None, False, None, None
 
     ultimo_estado_xml = _obtener_ultimo_estado_desde_xml(resultado.xml_respuesta)
     if ultimo_estado_xml is not None and estado_objetivo:
-        if ultimo_estado_xml.strip().lower() == estado_objetivo.strip().lower():
+        coincide_objetivo = (
+            ultimo_estado_xml.strip().lower() == estado_objetivo.strip().lower()
+        )
+        coincide_bd = (
+            ultimo_estado_xml.strip().lower()
+            == (notificacion.estado_ultimo or "").strip().lower()
+        )
+        if coincide_objetivo and coincide_bd:
             _log_step(
                 "procesar_por_estado",
                 "OK",
@@ -296,7 +303,7 @@ def _procesar_notificacion(
                     f"coincide con '{estado_objetivo}', se omite actualización."
                 ),
             )
-            return resultado, False, None
+            return resultado, False, None, ultimo_estado_xml
 
     envio = retornoxmlmp.EnvioNotificacion(
         id_envio=0,
@@ -319,7 +326,7 @@ def _procesar_notificacion(
             "ERROR",
             f"{notificacion.codigo_seguimiento}: no se pudo almacenar el XML: {exc}",
         )
-        return None, False, None
+        return None, False, None, ultimo_estado_xml
 
     archivo_datos: Optional[str] = None
     if notificacion.tiene_archivo:
@@ -340,7 +347,7 @@ def _procesar_notificacion(
                     f"no se pudo actualizar archivo: {exc}"
                 ),
             )
-            return None, False, None
+            return None, False, None, ultimo_estado_xml
         archivo_datos = _obtener_datos_archivo(conn_pg, notificacion.codigo_seguimiento)
 
     with _silenciar_salida_consola():
@@ -351,21 +358,26 @@ def _procesar_notificacion(
         f"Actualización completada para {notificacion.codigo_seguimiento}",
     )
 
-    return resultado, True, archivo_datos
+    return resultado, True, archivo_datos, ultimo_estado_xml
 
 
 def _imprimir_resultado_en_consola(
-    notificacion: NotificacionPendiente, datos_archivo: Optional[str]
+    notificacion: NotificacionPendiente,
+    datos_archivo: Optional[str],
+    ultimo_estado_xml: Optional[str],
 ) -> None:
     """Muestra los datos clave solicitados en consola."""
 
     archivo_texto = datos_archivo or ""
+    estado_nuevo = (ultimo_estado_xml or "").strip()
     print(
         "codigoseguimientomp={codigo}, notpolhistoricompestado={estado}, "
-        "laststagesian={laststage}, archivo={archivo}".format(
+        "estado_anterior_laststage={laststage}, estado_nuevo={estado_nuevo}, "
+        "archivo={archivo}".format(
             codigo=notificacion.codigo_seguimiento,
             estado=notificacion.estado_ultimo,
             laststage=notificacion.estado_envio,
+            estado_nuevo=estado_nuevo,
             archivo=archivo_texto,
         )
     )
@@ -407,7 +419,7 @@ def procesar_por_estado(
 
         codigos_actualizados: List[str] = []
         for notificacion in notificaciones:
-            resultado, actualizado, archivo_datos = _procesar_notificacion(
+            resultado, actualizado, archivo_datos, ultimo_estado_xml = _procesar_notificacion(
                 conn_pg,
                 conn_panel,
                 notificacion,
@@ -415,7 +427,11 @@ def procesar_por_estado(
                 bandera_test,
             )
             if resultado is not None:
-                _imprimir_resultado_en_consola(notificacion, archivo_datos)
+                _imprimir_resultado_en_consola(
+                    notificacion,
+                    archivo_datos,
+                    ultimo_estado_xml,
+                )
             if actualizado:
                 codigos_actualizados.append(notificacion.codigo_seguimiento)
 
