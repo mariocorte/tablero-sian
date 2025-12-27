@@ -1195,9 +1195,16 @@ def procesar_envios(
             iteraciones = ITERACIONES
 
         se_procesaron_envios_codigo = False
-        iteraciones_preparadas: List[Tuple[IteracionConsulta, datetime, List[EnvioNotificacion], str, bool, bool]] = []
+        iteraciones_preparadas: List[
+            Tuple[IteracionConsulta, datetime, List[EnvioNotificacion], str, bool, bool]
+        ] = []
         total_envios = 0
         codigos_actualizados_archivo: set[str] = set()
+        envios_procesados = 0
+
+        def _formatear_con_pendientes(mensaje: str) -> str:
+            pendientes = max(total_envios - envios_procesados, 0)
+            return f"{mensaje} | Faltan por procesar: {pendientes}"
 
         for iteracion in iteraciones:
             inicio_iteracion = datetime.now()
@@ -1214,7 +1221,7 @@ def procesar_envios(
                     f"[procesar_envios] Iteración: {iteracion.descripcion} | "
                     f"Error al obtener envíos: {exc}"
                 )
-                print(mensaje_error)
+                print(_formatear_con_pendientes(mensaje_error))
                 conn_pg.rollback()
                 conn_panel.rollback()
                 _registrar_evento_ejecucion(
@@ -1260,7 +1267,7 @@ def procesar_envios(
             )
 
         if not iteraciones_preparadas:
-            print("Total de registros a procesar: 0")
+            print(_formatear_con_pendientes("Total de registros a procesar: 0"))
 
         total_impreso = False
 
@@ -1273,7 +1280,11 @@ def procesar_envios(
             es_iteracion_notificaciones_25_45,
         ) in iteraciones_preparadas:
             if not total_impreso:
-                print(f"Total de registros a procesar: {total_envios}")
+                print(
+                    _formatear_con_pendientes(
+                        f"Total de registros a procesar: {total_envios}"
+                    )
+                )
                 total_impreso = True
 
             ejecutar_historial_general = (
@@ -1306,6 +1317,7 @@ def procesar_envios(
                                 observacion_error,
                             )
                         if resultado is None:
+                            envios_procesados += 1
                             continue
 
                         try:
@@ -1350,6 +1362,8 @@ def procesar_envios(
                                 observacion_error,
                             )
 
+                        envios_procesados += 1
+
                     if ejecutar_historial_general:
                         _ejecutar_historial_sian()
             except Exception as exc:
@@ -1357,7 +1371,7 @@ def procesar_envios(
                 conn_pg.rollback()
                 conn_panel.rollback()
                 observacion_error = f"{mensaje_iteracion} | Error inesperado: {exc}"
-                print(observacion_error)
+                print(_formatear_con_pendientes(observacion_error))
                 _registrar_evento_ejecucion(
                     conn_panel,
                     inicio_iteracion,
@@ -1382,8 +1396,10 @@ def procesar_envios(
         ruta_txt = _guardar_codigos_actualizados(codigos_actualizados_archivo)
         if ruta_txt:
             print(
-                "[procesar_envios] Archivo de códigos actualizados generado en "
-                f"{ruta_txt}"
+                _formatear_con_pendientes(
+                    "[procesar_envios] Archivo de códigos actualizados generado en "
+                    f"{ruta_txt}"
+                )
             )
 
 
