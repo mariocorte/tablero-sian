@@ -557,7 +557,7 @@ def _actualizar_envio_por_codigo(
         SET laststagesian = %s,
             fechalaststate = %s,
             finsian = %s
-        WHERE codigoseguimientomp = %s
+        WHERE TRIM(codigoseguimientomp) = TRIM(%s)
     """
     cursor.execute(
         update_query,
