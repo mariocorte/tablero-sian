@@ -142,12 +142,13 @@ def lasstage(
     )
 
     if not estados_filtrados:
+        ultimo_estado = _obtener_estado_mas_reciente(estados_normalizados)
         _log_step(
             "lasstage",
             "OK",
             "Sin estados nuevos para registrar",
         )
-        return None, 0, 0
+        return ultimo_estado, len(estados_normalizados), 0
 
     insertados = _guardar_historial_notpol(
         estados_filtrados,
