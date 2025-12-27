@@ -89,6 +89,7 @@ def _obtener_notificaciones_por_estado(
               AND (
                 LOWER(COALESCE(ultimo_estado.notpolhistoricompestado, '')) = LOWER(%s)
                 OR LOWER(COALESCE(env.laststagesian, '')) = LOWER(%s)
+                OR ultimo_estado.codigoseguimientomp IS NULL
               )
             ORDER BY TRIM(env.codigoseguimientomp)
         """
