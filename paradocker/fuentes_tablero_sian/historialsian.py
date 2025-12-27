@@ -473,7 +473,7 @@ def grabar_historico(
                     SET laststagesian = %s,
                         fechalaststate = %s,
                         finsian = %s
-                    WHERE codigoseguimientomp = %s
+                    WHERE TRIM(codigoseguimientomp) = TRIM(%s)
                 """
                 cursor.execute(
                     update_query,
@@ -791,4 +791,3 @@ if __name__ == "__main__":
 
 
 # Recorrer el XML
-
