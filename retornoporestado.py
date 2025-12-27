@@ -440,7 +440,7 @@ def _procesar_notificacion(
     )
 
     try:
-        retornoxmlmp._almacenar_xml(
+        resultado_almacen = retornoxmlmp._almacenar_xml(
             conn_panel,
             envio,
             resultado.xml_respuesta,
@@ -469,6 +469,25 @@ def _procesar_notificacion(
             requiere_actualizacion = True
     if tiene_archivo_xml and not notificacion.tiene_archivo:
         requiere_actualizacion = True
+
+    if requiere_actualizacion and resultado_almacen == "sin_cambios":
+        with conn_panel.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE retornomp
+                SET procesado = FALSE,
+                    fechaproceso = NULL
+                WHERE pmovimientoid = %s
+                  AND pactuacionid = %s
+                  AND pdomicilioelectronicopj = %s
+                """,
+                (
+                    notificacion.pmovimientoid,
+                    notificacion.pactuacionid,
+                    notificacion.pdomicilioelectronicopj,
+                ),
+            )
+        conn_panel.commit()
 
     if requiere_actualizacion:
         with _silenciar_salida_consola():
