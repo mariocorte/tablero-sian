@@ -362,11 +362,21 @@ def llamar_his_mp(
             _log_step(
                 "llamar_his_mp",
                 "OK",
-                f"Sin estados nuevos para {CODIGO_SEGUIMIENTO}",
+                (
+                    f"Sin estados en el XML para {CODIGO_SEGUIMIENTO}; "
+                    "se registra 'Sin info' en el envío"
+                ),
             )
-            return True
+            return grabar_historico(
+                "Sin info",
+                None,
+                pmovimientoid,
+                pactuacionid,
+                pdomicilioelectronicopj,
+                CODIGO_SEGUIMIENTO,
+            )
 
-        estado = ultimo_estado.get("estado")
+        estado = (ultimo_estado.get("estado") or "").strip() or "Sin info"
         fecha_estado = ultimo_estado.get("fecha_raw")
         _log_step(
             "llamar_his_mp",
