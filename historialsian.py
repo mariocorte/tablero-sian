@@ -136,19 +136,20 @@ def lasstage(
     )
 
     estados_normalizados = _normalizar_estados(estados, namespaces)
+    total_estados = len(estados_normalizados)
+    ultimo_estado = _obtener_estado_mas_reciente(estados_normalizados)
 
     estados_filtrados = _filtrar_estados_nuevos(
         estados_normalizados, fecha_ultima_estado
     )
 
     if not estados_filtrados:
-        ultimo_estado = _obtener_estado_mas_reciente(estados_normalizados)
         _log_step(
             "lasstage",
             "OK",
             "Sin estados nuevos para registrar",
         )
-        return ultimo_estado, len(estados_normalizados), 0
+        return ultimo_estado, total_estados, 0
 
     insertados = _guardar_historial_notpol(
         estados_filtrados,
@@ -158,13 +159,12 @@ def lasstage(
         CODIGO_SEGUIMIENTO,
     )
 
-    ultimo_estado = estados_filtrados[-1]
     _log_step(
         "lasstage",
         "OK",
         f"Estados obtenidos correctamente para {CODIGO_SEGUIMIENTO}",
     )
-    return ultimo_estado, len(estados_filtrados), insertados
+    return ultimo_estado, total_estados, insertados
 
 
 def pre_historial(codigodeseguimientomp: Optional[str] = None):
@@ -851,16 +851,6 @@ def _guardar_historial_notpol(
                         insertados += 1
                         claves_existentes.add(clave)
 
-                if insertados:
-                    ultimo_estado = _obtener_estado_mas_reciente(estados)
-                    if ultimo_estado is not None:
-                        _actualizar_envio_por_codigo(
-                            cursor,
-                            (ultimo_estado.get("estado") or ""),
-                            ultimo_estado.get("fecha_raw")
-                            or ultimo_estado.get("fecha"),
-                            CODIGO_SEGUIMIENTO,
-                        )
             conexion.commit()
             if insertados:
                 SUMMARY.add("notpolhistoricomp", "agregados", insertados)
