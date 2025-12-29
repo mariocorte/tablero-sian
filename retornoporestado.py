@@ -2,8 +2,8 @@
 
 Este módulo busca las notificaciones cuyo último estado registrado en
 ``notpolhistoricomp`` coincide con el valor indicado por argumento. Para cada
-coincidencia se consulta el servicio SOAP del Ministerio Público, almacena el
-XML en ``retornomp`` y ejecuta ``historialsian`` para refrescar los estados.
+coincidencia se consulta el servicio SOAP del Ministerio Público y se procesa
+el XML en memoria para refrescar los estados.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ import psycopg2
 from psycopg2 import extras
 
 import historialsian
-from historialsian import _log_step, panel_config, pgsql_config, test as default_test_flag
+from historialsian import _log_step, pgsql_config, test as default_test_flag
 import retornoxmlmp
 
 
@@ -319,7 +319,6 @@ def _obtener_datos_archivo(
 
 def _procesar_notificacion(
     conn_pg: psycopg2.extensions.connection,
-    conn_panel: psycopg2.extensions.connection,
     notificacion: NotificacionPendiente,
     usar_test: bool,
 ) -> tuple[
@@ -388,42 +387,20 @@ def _procesar_notificacion(
         codigoseguimientomp=notificacion.codigo_seguimiento,
     )
 
-    try:
-        resultado_almacen = retornoxmlmp._almacenar_xml(
-            conn_panel,
-            envio,
-            resultado.xml_respuesta,
-        )
-    except Exception as exc:  # pragma: no cover - dependiente de la base real
-        conn_panel.rollback()
-        _log_step(
-            "procesar_por_estado",
-            "ERROR",
-            f"{notificacion.codigo_seguimiento}: no se pudo almacenar el XML: {exc}",
-        )
-        return None, False, None, ultimo_estado_xml, estado_nuevo_consola
-
-    if resultado_almacen == "sin_cambios":
-        with conn_panel.cursor() as cursor:
-            cursor.execute(
-                """
-                UPDATE retornomp
-                SET procesado = FALSE,
-                    fechaproceso = NULL
-                WHERE pmovimientoid = %s
-                  AND pactuacionid = %s
-                  AND pdomicilioelectronicopj = %s
-                """,
-                (
-                    notificacion.pmovimientoid,
-                    notificacion.pactuacionid,
-                    notificacion.pdomicilioelectronicopj,
-                ),
-            )
-        conn_panel.commit()
-
-    historialsian.pre_historial(codigodeseguimientomp=notificacion.codigo_seguimiento)
-    actualizo_historial = True
+    fecha_historial = historialsian._obtener_fecha_historial(
+        conn_pg, notificacion.codigo_seguimiento
+    )
+    fecha_ultima = (
+        fecha_historial if fecha_historial is not None else notificacion.fecha_ultimo_estado
+    )
+    actualizo_historial = historialsian.llamar_his_mp(
+        notificacion.pmovimientoid,
+        notificacion.pactuacionid,
+        notificacion.pdomicilioelectronicopj,
+        notificacion.codigo_seguimiento,
+        fecha_ultima,
+        resultado.xml_respuesta,
+    )
 
     archivo_datos: Optional[str] = None
     archivo_actualizado = False
@@ -496,11 +473,8 @@ def procesar_por_estado(
 
     bandera_test = default_test_flag if usar_test is None else usar_test
 
-    with psycopg2.connect(**pgsql_config) as conn_pg, psycopg2.connect(
-        **panel_config
-    ) as conn_panel:
+    with psycopg2.connect(**pgsql_config) as conn_pg:
         conn_pg.autocommit = False
-        conn_panel.autocommit = False
 
         notificaciones = _obtener_notificaciones_por_estado(
             conn_pg,
@@ -529,7 +503,6 @@ def procesar_por_estado(
                 estado_nuevo_consola,
             ) = _procesar_notificacion(
                 conn_pg,
-                conn_panel,
                 notificacion,
                 bandera_test,
             )
