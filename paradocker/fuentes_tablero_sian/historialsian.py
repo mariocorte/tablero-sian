@@ -135,6 +135,8 @@ def lasstage(
     )
 
     estados_normalizados = _normalizar_estados(estados, namespaces)
+    total_estados = len(estados_normalizados)
+    ultimo_estado = _obtener_estado_mas_reciente(estados_normalizados)
 
     estados_filtrados = _filtrar_estados_nuevos(
         estados_normalizados, fecha_ultima_estado
@@ -146,7 +148,7 @@ def lasstage(
             "OK",
             "Sin estados nuevos para registrar",
         )
-        return None, 0, 0
+        return ultimo_estado, total_estados, 0
 
     insertados = _guardar_historial_notpol(
         estados_filtrados,
@@ -156,13 +158,12 @@ def lasstage(
         CODIGO_SEGUIMIENTO,
     )
 
-    ultimo_estado = estados_filtrados[-1]
     _log_step(
         "lasstage",
         "OK",
         f"Estados obtenidos correctamente para {CODIGO_SEGUIMIENTO}",
     )
-    return ultimo_estado, len(estados_filtrados), insertados
+    return ultimo_estado, total_estados, insertados
 
 
 def pre_historial():
