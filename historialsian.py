@@ -171,9 +171,7 @@ def pre_historial(codigodeseguimientomp: Optional[str] = None):
     _log_step("pre_historial", "INICIO", "Preparando actualización de registros")
     codigo_filtrado = (codigodeseguimientomp or "").strip() or None
     try:
-        with psycopg2.connect(**pgsql_config) as conexion_pg, psycopg2.connect(
-            **panel_config
-        ) as conexion_panel:
+        with psycopg2.connect(**pgsql_config) as conexion_pg:
             with conexion_pg.cursor() as cursor_pg:
                 cursor_pg.execute(
                     "update enviocedulanotificacionpolicia set finsian = True "
@@ -195,137 +193,12 @@ def pre_historial(codigodeseguimientomp: Optional[str] = None):
 
             conexion_pg.commit()
 
-            with conexion_panel.cursor() as cursor_panel:
-                consulta_retornos = [
-                    "SELECT",
-                    "    r.pmovimientoid,",
-                    "    r.pactuacionid,",
-                    "    r.pdomicilioelectronicopj,",
-                    "    r.contenido_xml",
-                    "FROM retornomp r",
-                    "WHERE COALESCE(r.procesado, FALSE) = FALSE",
-                ]
-
-                params: List[Any] = []
-                if codigo_filtrado is not None:
-                    claves_filtrado = _obtener_identificadores_por_codigo(
-                        conexion_pg, codigo_filtrado
-                    )
-
-                    if not claves_filtrado:
-                        _log_step(
-                            "pre_historial",
-                            "OK",
-                            f"No se encontraron envíos para el código {codigo_filtrado}",
-                        )
-                        return
-
-                    filtros = []
-                    for pmov, pact, pdom in claves_filtrado:
-                        filtros.append(
-                            "(r.pmovimientoid = %s AND r.pactuacionid = %s AND "
-                            "r.pdomicilioelectronicopj = %s)"
-                        )
-                        params.extend([pmov, pact, pdom])
-
-                    consulta_retornos.append("  AND (" + " OR ".join(filtros) + ")")
-
-                consulta_retornos.append(
-                    "ORDER BY r.ultactualizacion NULLS LAST, r.pmovimientoid, r.pactuacionid"
-                )
-
-                cursor_panel.execute("\n".join(consulta_retornos), tuple(params))
-                retornos = cursor_panel.fetchall()
-
-            if not retornos:
-                _log_step(
-                    "pre_historial",
-                    "OK",
-                    (
-                        "No hay retornos pendientes en retornomp"
-                        if codigo_filtrado is None
-                        else f"No hay retornos pendientes para {codigo_filtrado}"
-                    ),
-                )
-                return
-
-            for retorno in retornos:
-                pmovimientoid, pactuacionid, pdomicilioelectronicopj, xml_contenido = retorno
-                try:
-                    _log_step(
-                        "pre_historial",
-                        "INICIO",
-                        f"Procesando retorno (mov={pmovimientoid}, act={pactuacionid})",
-                    )
-                    datos_envio = _obtener_datos_envio(
-                        conexion_pg,
-                        pmovimientoid,
-                        pactuacionid,
-                        pdomicilioelectronicopj,
-                    )
-
-                    if datos_envio is None:
-                        _log_step(
-                            "pre_historial",
-                            "ADVERTENCIA",
-                            "No se encontró el envío asociado en enviocedulanotificacionpolicia",
-                        )
-                        continue
-
-                    codigoseguimiento, _fecha_ultima_envio = datos_envio
-                    if codigo_filtrado is not None and (
-                        (codigoseguimiento or "").strip() != codigo_filtrado
-                    ):
-                        _log_step(
-                            "pre_historial",
-                            "ADVERTENCIA",
-                            (
-                                "El código asociado al retorno no coincide con "
-                                f"{codigo_filtrado}"
-                            ),
-                        )
-                        continue
-
-                    fecha_historial = _obtener_fecha_historial(
-                        conexion_pg,
-                        codigoseguimiento,
-                    )
-                    fecha_ultima = fecha_historial if fecha_historial is not None else None
-                    exito = llamar_his_mp(
-                        pmovimientoid,
-                        pactuacionid,
-                        pdomicilioelectronicopj,
-                        codigoseguimiento,
-                        fecha_ultima,
-                        xml_contenido,
-                    )
-
-                    if exito:
-                        _marcar_retornomp_procesado(
-                            conexion_panel,
-                            pmovimientoid,
-                            pactuacionid,
-                            pdomicilioelectronicopj,
-                        )
-                        _log_step(
-                            "pre_historial",
-                            "OK",
-                            f"Retorno {codigoseguimiento} procesado y marcado",
-                        )
-                    else:
-                        _log_step(
-                            "pre_historial",
-                            "ERROR",
-                            f"No se pudo procesar el retorno {codigoseguimiento}",
-                        )
-                except Exception as e:
-                    _log_step(
-                        "pre_historial",
-                        "ERROR",
-                        f"Error procesando retorno (mov={pmovimientoid}, act={pactuacionid}): {e}",
-                    )
-
-            _log_step("pre_historial", "OK", "Proceso de historial finalizado")
+            _log_step(
+                "pre_historial",
+                "OK",
+                "Se omite el procesamiento de retornomp por configuración.",
+            )
+            return
     except Exception as e:
         _log_step(
             "pre_historial",
