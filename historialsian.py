@@ -455,6 +455,89 @@ def _actualizar_envio_por_codigo(
     return cursor.rowcount
 
 
+def _obtener_ultimo_estado_notpolhistoricomp(
+    cursor: psycopg2.extensions.cursor,
+    pmovimientoid,
+    pactuacionid,
+    pdomicilioelectronicopj,
+    codigo_seguimiento: str,
+) -> Optional[Tuple[str, Optional[datetime]]]:
+    consulta = """
+        SELECT notpolhistoricompestado,
+               to_timestamp(
+                   left(replace(notpolhistoricompfecha, 'T', ' '), 19),
+                   'YYYY-MM-DD HH24:MI:SS'
+               )
+        FROM notpolhistoricomp
+        WHERE pmovimientoid = %s
+          AND pactuacionid = %s
+          AND pdomicilioelectronicopj = %s
+          AND TRIM(codigoseguimientomp) = TRIM(%s)
+        ORDER BY notpolhistoricompestadonid DESC NULLS LAST,
+                 to_timestamp(
+                     left(replace(notpolhistoricompfecha, 'T', ' '), 19),
+                     'YYYY-MM-DD HH24:MI:SS'
+                 ) DESC NULLS LAST
+        LIMIT 1
+    """
+    cursor.execute(
+        consulta,
+        (pmovimientoid, pactuacionid, pdomicilioelectronicopj, codigo_seguimiento),
+    )
+    fila = cursor.fetchone()
+    if not fila:
+        return None
+    return fila[0], fila[1]
+
+
+def _actualizar_envio_con_ultimo_estado(
+    cursor: psycopg2.extensions.cursor,
+    pmovimientoid,
+    pactuacionid,
+    pdomicilioelectronicopj,
+    codigo_seguimiento: str,
+) -> int:
+    ultimo_estado = _obtener_ultimo_estado_notpolhistoricomp(
+        cursor,
+        pmovimientoid,
+        pactuacionid,
+        pdomicilioelectronicopj,
+        codigo_seguimiento,
+    )
+    if not ultimo_estado:
+        return 0
+
+    estado_texto, fecha_estado = ultimo_estado
+    update_query = """
+        UPDATE enviocedulanotificacionpolicia
+        SET laststagesian = %s,
+            fechalaststate = %s,
+            finsian = %s
+        WHERE pmovimientoid = %s
+          AND pactuacionid = %s
+          AND pdomicilioelectronicopj = %s
+          AND TRIM(codigoseguimientomp) = TRIM(%s)
+    """
+    cursor.execute(
+        update_query,
+        (
+            estado_texto,
+            fecha_estado,
+            _estado_finalizado(estado_texto or ""),
+            pmovimientoid,
+            pactuacionid,
+            pdomicilioelectronicopj,
+            codigo_seguimiento,
+        ),
+    )
+    SUMMARY.add(
+        "enviocedulanotificacionpolicia",
+        "modificados",
+        cursor.rowcount,
+    )
+    return cursor.rowcount
+
+
 def _obtener_estado_mas_reciente(
     estados: Iterable[Dict[str, Any]],
 ) -> Optional[Dict[str, Any]]:
@@ -493,6 +576,13 @@ def grabar_historico(
                     cursor,
                     estado_texto,
                     fecha_estado,
+                    CODIGO_SEGUIMIENTO,
+                )
+                _actualizar_envio_con_ultimo_estado(
+                    cursor,
+                    pmovimientoid,
+                    pactuacionid,
+                    pdomicilioelectronicopj,
                     CODIGO_SEGUIMIENTO,
                 )
                 conexion.commit()

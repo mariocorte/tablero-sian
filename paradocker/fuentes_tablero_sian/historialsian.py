@@ -440,6 +440,98 @@ def _formatear_fecha_estado(fecha_estado: Optional[Union[str, datetime]]) -> str
     return "Sin fecha"
 
 
+def _estado_finalizado(estado_texto: str) -> bool:
+    return estado_texto.upper() in (
+        "ENTREGADA",
+        "NO ENTREGADA",
+        "DESCARTADA",
+        "FINALIZADA",
+    )
+
+
+def _obtener_ultimo_estado_notpolhistoricomp(
+    cursor: psycopg2.extensions.cursor,
+    pmovimientoid,
+    pactuacionid,
+    pdomicilioelectronicopj,
+    codigo_seguimiento: str,
+) -> Optional[Tuple[str, Optional[datetime]]]:
+    consulta = """
+        SELECT notpolhistoricompestado,
+               to_timestamp(
+                   left(replace(notpolhistoricompfecha, 'T', ' '), 19),
+                   'YYYY-MM-DD HH24:MI:SS'
+               )
+        FROM notpolhistoricomp
+        WHERE pmovimientoid = %s
+          AND pactuacionid = %s
+          AND pdomicilioelectronicopj = %s
+          AND TRIM(codigoseguimientomp) = TRIM(%s)
+        ORDER BY notpolhistoricompestadonid DESC NULLS LAST,
+                 to_timestamp(
+                     left(replace(notpolhistoricompfecha, 'T', ' '), 19),
+                     'YYYY-MM-DD HH24:MI:SS'
+                 ) DESC NULLS LAST
+        LIMIT 1
+    """
+    cursor.execute(
+        consulta,
+        (pmovimientoid, pactuacionid, pdomicilioelectronicopj, codigo_seguimiento),
+    )
+    fila = cursor.fetchone()
+    if not fila:
+        return None
+    return fila[0], fila[1]
+
+
+def _actualizar_envio_con_ultimo_estado(
+    cursor: psycopg2.extensions.cursor,
+    pmovimientoid,
+    pactuacionid,
+    pdomicilioelectronicopj,
+    codigo_seguimiento: str,
+) -> int:
+    ultimo_estado = _obtener_ultimo_estado_notpolhistoricomp(
+        cursor,
+        pmovimientoid,
+        pactuacionid,
+        pdomicilioelectronicopj,
+        codigo_seguimiento,
+    )
+    if not ultimo_estado:
+        return 0
+
+    estado_texto, fecha_estado = ultimo_estado
+    update_query = """
+        UPDATE enviocedulanotificacionpolicia
+        SET laststagesian = %s,
+            fechalaststate = %s,
+            finsian = %s
+        WHERE pmovimientoid = %s
+          AND pactuacionid = %s
+          AND pdomicilioelectronicopj = %s
+          AND TRIM(codigoseguimientomp) = TRIM(%s)
+    """
+    cursor.execute(
+        update_query,
+        (
+            estado_texto,
+            fecha_estado,
+            _estado_finalizado(estado_texto or ""),
+            pmovimientoid,
+            pactuacionid,
+            pdomicilioelectronicopj,
+            codigo_seguimiento,
+        ),
+    )
+    SUMMARY.add(
+        "enviocedulanotificacionpolicia",
+        "modificados",
+        cursor.rowcount,
+    )
+    return cursor.rowcount
+
+
 def grabar_historico(
     estado,
     fecha_estado,
@@ -459,16 +551,6 @@ def grabar_historico(
                 estado_texto = estado or ""
                 fecha_estado_texto = _formatear_fecha_estado(fecha_estado)
 
-                if estado_texto.upper() in (
-                    "ENTREGADA",
-                    "NO ENTREGADA",
-                    "DESCARTADA",
-                    "FINALIZADA",
-                ):
-                    finsian = True
-                else:
-                    finsian = False
-
                 update_query = """
                     UPDATE enviocedulanotificacionpolicia
                     SET laststagesian = %s,
@@ -478,12 +560,24 @@ def grabar_historico(
                 """
                 cursor.execute(
                     update_query,
-                    (estado_texto, fecha_estado, finsian, CODIGO_SEGUIMIENTO),
+                    (
+                        estado_texto,
+                        fecha_estado,
+                        _estado_finalizado(estado_texto),
+                        CODIGO_SEGUIMIENTO,
+                    ),
                 )
                 SUMMARY.add(
                     "enviocedulanotificacionpolicia",
                     "modificados",
                     cursor.rowcount,
+                )
+                _actualizar_envio_con_ultimo_estado(
+                    cursor,
+                    pmovimientoid,
+                    pactuacionid,
+                    pdomicilioelectronicopj,
+                    CODIGO_SEGUIMIENTO,
                 )
                 conexion.commit()
                 _log_step(
