@@ -1,5 +1,6 @@
 from fastapi import FastAPI
-from pydantic import BaseModel
+from pydantic import BaseModel, validator
+from typing import List
 
 
 class Persona(BaseModel):
@@ -9,7 +10,15 @@ class Persona(BaseModel):
 
 
 class PersonasRequest(BaseModel):
-    personas: list[Persona]
+    personas: List[Persona]
+
+    @validator("personas", pre=True)
+    def ensure_list(cls, value):
+        if value is None:
+            return value
+        if isinstance(value, dict):
+            return [value]
+        return value
 
 app = FastAPI()
 
