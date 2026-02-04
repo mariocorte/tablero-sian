@@ -71,6 +71,23 @@ def _construir_xml(payload: Dict[str, Any]) -> str:
     )
 
 
+def consultar_estado_notificacion(
+    entorno: str,
+    payload: Dict[str, Any],
+    timeout: float = 30.0,
+) -> requests.Response:
+    xml_body = _construir_xml(payload)
+    host = _normalizar_entorno(entorno)
+    url = f"https://{host}{BASE_PATH}"
+
+    headers = {
+        "Content-Type": "text/xml;charset=UTF-8",
+        "SOAPAction": SOAP_ACTION,
+    }
+
+    return requests.post(url, headers=headers, data=xml_body.strip(), timeout=timeout)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Consulta el estado de una notificación vía SOAP."
@@ -96,21 +113,12 @@ def main() -> int:
 
     try:
         payload = _cargar_payload(args)
-        xml_body = _construir_xml(payload)
     except (ValueError, json.JSONDecodeError) as exc:
         print(f"Error en los parámetros: {exc}", file=sys.stderr)
         return 2
 
-    host = _normalizar_entorno(args.entorno)
-    url = f"https://{host}{BASE_PATH}"
-
-    headers = {
-        "Content-Type": "text/xml;charset=UTF-8",
-        "SOAPAction": SOAP_ACTION,
-    }
-
     try:
-        response = requests.post(url, headers=headers, data=xml_body.strip(), timeout=args.timeout)
+        response = consultar_estado_notificacion(args.entorno, payload, args.timeout)
     except requests.RequestException as exc:
         print(f"Error HTTP: {exc}", file=sys.stderr)
         return 1
