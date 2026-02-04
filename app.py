@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request
 from pydantic import BaseModel
 from fastapi import BackgroundTasks
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 import psycopg2
 import os
@@ -14,6 +14,7 @@ import json
 import xml.etree.ElementTree as ET
 from typing import Tuple, Optional, Any, List, Sequence  # ✅ agregado
 
+from soap_notificacion import consultar_estado_notificacion
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
@@ -49,6 +50,18 @@ class QueryParams(BaseModel):
     portiw: str
     databaseiw: str
     exp_id: Optional[int] = None
+
+
+class SoapNotificacionPayload(BaseModel):
+    UsuarioClave: str
+    UsuarioNombre: str
+    codigoSeguimiento: str
+
+
+class SoapNotificacionRequest(BaseModel):
+    entorno: str
+    payload: SoapNotificacionPayload
+    timeout: float = 30.0
 
 
 classpath = "/code/app/ifxjdbc.jar"
@@ -222,6 +235,26 @@ async def root(params: QueryParams, background_tasks: BackgroundTasks):
     return {
         "mensaje": "Proceso lanzado en segundo plano correctamente",
         "errores": 0,
+    }
+
+
+@app.post("/soap-notificacion")
+async def soap_notificacion_endpoint(params: SoapNotificacionRequest):
+    try:
+        response = consultar_estado_notificacion(
+            params.entorno,
+            params.payload.model_dump(),
+            params.timeout,
+        )
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={"error": str(exc)})
+    except requests.RequestException as exc:
+        return JSONResponse(status_code=502, content={"error": f"Error HTTP: {exc}"})
+
+    return {
+        "status": response.status_code,
+        "ok": response.ok,
+        "body": response.text,
     }
 
 
